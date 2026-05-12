@@ -1,0 +1,563 @@
+import os
+import json
+from datetime import datetime
+from config import config_existe, guardar_config, cargar_config, get_siguiente_numero_factura, get_siguiente_numero_presupuesto, init_db, guardar_log
+from holded import crear_factura
+from factura_pdf import generar_factura_pdf
+from openai import OpenAI
+from dotenv import load_dotenv
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardRemove
+from telegram.ext import (
+    ApplicationBuilder,
+    MessageHandler,
+    CommandHandler,
+    CallbackQueryHandler,
+    filters,
+    ContextTypes,
+    ConversationHandler
+)
+
+# Carga variables de entorno del archivo .env
+load_dotenv()
+TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
+client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+
+# Estados de la conversación
+ESPERANDO_AUDIO = 0
+ESPERANDO_CONFIRMACION = 1
+ESPERANDO_VALOR_CAMPO = 2
+REGISTRO_NOMBRE = 3
+REGISTRO_NIF = 4
+REGISTRO_DIRECCION = 5
+REGISTRO_TELEFONO = 6
+REGISTRO_EMAIL = 7
+
+def get_prompt_sistema():
+    """Genera el prompt con la fecha de hoy actualizada"""
+    hoy = datetime.now().strftime("%d/%m/%Y")
+    return f"""
+Eres un asistente para autónomos del sector construcción en España.
+Recibirás una transcripción de una nota de voz informal.
+Tu trabajo es extraer los datos para generar una factura o presupuesto.
+
+La fecha de hoy es {hoy}. Usa esta fecha por defecto si no se menciona otra.
+
+Devuelve SOLO un JSON válido con estos campos exactos:
+{{
+    "tipo": "factura o presupuesto según lo que mencione el audio. Si no se menciona, usa null",
+    "cliente_nombre": "nombre de la persona o empresa",
+    "cliente_direccion": "dirección completa del cliente",
+    "concepto": "descripción del trabajo realizado",
+    "materiales": [{{"descripcion": "...", "precio": 0.00}}],
+    "horas": 0,
+    "precio_hora": 0.00,
+    "desplazamiento": 0.00,
+    "validez_dias": null,
+    "fecha": "{hoy}",
+    "total": 0.00
+}}
+
+Reglas:
+- Si un dato no aparece, ponlo como null
+- Ordena los datos y la informacion de la manera mas comoda para leer e introducir en una factura, con signos de puntuacion.
+ Estructura la direccion como sereia la manera legal y aceptada por instituciones
+- El campo tipo solo puede ser "factura" o "presupuesto" o null
+- Si el audio menciona palabras como "presupuesto", "precio aproximado", "cuánto costaría" → tipo: "presupuesto"
+- Si el audio menciona "factura", "cobrar", "trabajo terminado" → tipo: "factura"
+- Si tipo es "presupuesto", validez_dias por defecto es 30 salvo que se indique otro
+- Si tipo es "factura", validez_dias es null
+- En el concepto escribe solo la primera letra en mayúscula y el resto en minúscula, excepto nombres propios y marcas comerciales
+- En los materiales capitaliza solo la primera letra de la descripción y los nombres de marcas comerciales (ej: "Grifo Roca", "Portero Fermax")
+- El total es la suma de materiales + (horas x precio_hora) + desplazamiento
+- La fecha de hoy es {hoy} — úsala si no se menciona otra fecha, si se menciona una fecha concreta calcula la fecha exacta en formato DD/MM/YYYY partiendo de que hoy es {hoy}
+- Si se menciona una fecha relativa como 'ayer', 'la semana pasada', 'el lunes pasado', calcula la fecha exacta en formato DD/MM/YYYY partiendo de que hoy es {hoy}
+- Devuelve SOLO el JSON, sin texto adicional ni bloques de código
+"""
+
+def construir_resumen(datos):
+    """Construye el texto del resumen — factura o presupuesto"""
+    total_horas = (datos["horas"] or 0) * (datos["precio_hora"] or 0)
+    tipo = datos.get("tipo", "factura")
+    
+    if tipo == "presupuesto":
+        titulo = "📋 *Resumen del presupuesto:*"
+    else:
+        titulo = "✅ *Resumen de la factura:*"
+
+    resumen = (
+        f"{titulo}\n\n"
+        f"👤 *Cliente:* {datos.get('cliente_nombre') or 'No especificado'}\n"
+        f"📍 *Dirección:* {datos.get('cliente_direccion') or 'No especificada'}\n"
+        f"🔧 *Trabajo:* {datos['concepto'] or 'No especificado'}\n"
+    )
+
+    if datos["materiales"]:
+        resumen += "\n📦 *Materiales:*\n"
+        for m in datos["materiales"]:
+            resumen += f"  • {m['descripcion']}: {m['precio']}€\n"
+
+    resumen += (
+        f"\n⏱️ *Horas:* {datos['horas'] or 0}h x {datos['precio_hora'] or 0}€ = {total_horas}€\n"
+        f"🚗 *Desplazamiento:* {datos['desplazamiento'] or 0}€\n"
+        f"📅 *Fecha:* {datos['fecha'] or 'No especificada'}\n"
+    )
+
+    if tipo == "presupuesto":
+        validez = datos.get("validez_dias") or 30
+        resumen += f"⏳ *Validez:* {validez} días\n"
+
+    resumen += (
+        f"\n💰 *Subtotal: {datos['total'] or 0}€*\n"
+        f"🧾 *IVA (21%): {round((datos['total'] or 0) * 0.21, 2)}€*\n"
+        f"💵 *TOTAL: {round((datos['total'] or 0) * 1.21, 2)}€*\n\n"        f"¿Es correcto?"
+            )
+    return resumen
+
+def construir_teclado_confirmacion(tipo="factura"):
+    if tipo == "presupuesto":
+        texto_confirmar = "✅ SÍ, crear presupuesto"
+        callback_confirmar = "confirmar_presupuesto"
+        texto_cambiar = "📄 Cambiar a factura"
+        callback_cambiar = "cambiar_tipo_factura"
+    else:
+        texto_confirmar = "✅ SÍ, crear factura"
+        callback_confirmar = "confirmar_factura"
+        texto_cambiar = "📋 Cambiar a presupuesto"
+        callback_cambiar = "cambiar_tipo_presupuesto"
+
+    return InlineKeyboardMarkup([
+        [
+            InlineKeyboardButton(texto_confirmar, callback_data=callback_confirmar),
+            InlineKeyboardButton("✏️ Editar campo", callback_data="editar"),
+        ],
+        [
+            InlineKeyboardButton(texto_cambiar, callback_data=callback_cambiar),
+            InlineKeyboardButton("❌ Repetir audio", callback_data="repetir")
+        ]
+    ])
+
+def construir_teclado_campos():
+    """Construye los botones de selección de campo a editar"""
+    return InlineKeyboardMarkup([
+        [
+            InlineKeyboardButton("👤 Cliente", callback_data="campo_cliente_nombre"),
+            InlineKeyboardButton("📍 Dirección", callback_data="campo_cliente_direccion"),
+            InlineKeyboardButton("🔧 Trabajo", callback_data="campo_concepto")
+        ],
+        [
+            InlineKeyboardButton("📦 Materiales", callback_data="campo_materiales"),
+            InlineKeyboardButton("⏱️ Horas", callback_data="campo_horas")
+        ],
+        [
+            InlineKeyboardButton("💰 Precio/hora", callback_data="campo_precio_hora"),
+            InlineKeyboardButton("🚗 Desplazamiento", callback_data="campo_desplazamiento")
+        ],
+        [
+            InlineKeyboardButton("📅 Fecha", callback_data="campo_fecha"),
+            InlineKeyboardButton("💵 Total", callback_data="campo_total")
+        ]
+     ])
+
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Comando /start — comprueba si el autónomo ya está registrado"""
+    chat_id = update.effective_chat.id
+    if config_existe(chat_id):
+        config = cargar_config(chat_id)
+        texto = (
+                f"👋 Hola de nuevo, {config['nombre']}.\n\n"
+                "Envíame una nota de voz describiendo el trabajo y te generaré "
+                "una *factura* o *presupuesto* al instante.\n\n"
+                "Puedes decir por ejemplo:\n"
+                "• _'Hazme una factura para Juan García...'_\n"
+                "• _'Necesito un presupuesto para una reforma...'_\n\n"
+                "Intenta incluir:\n"
+                "• Nombre y dirección del cliente\n"
+                "• Trabajo realizado\n"
+                "• Materiales usados y su precio\n"
+                "• Horas trabajadas y precio por hora\n"
+                "• Desplazamiento si lo hay\n"
+                "• Fecha del trabajo"
+            )
+        await update.message.reply_text(texto, parse_mode="Markdown")
+        return ESPERANDO_AUDIO
+    else:
+            await update.message.reply_text(
+                "👋 Hola, soy tu asistente de facturas.\n\n"
+                "Antes de empezar necesito configurar tus datos para las facturas.\n\n"
+                "¿Cuál es tu nombre completo o razón social?"
+            )
+            return REGISTRO_NOMBRE
+
+async def registro_nombre(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Recibe el nombre del autónomo"""
+    context.user_data["reg_nombre"] = update.message.text
+    await update.message.reply_text(
+        f"✅ Perfecto, {update.message.text}.\n\n"
+        "¿Cuál es tu NIF o CIF?"
+    )
+    return REGISTRO_NIF
+
+async def registro_nif(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Recibe el NIF del autónomo"""
+    context.user_data["reg_nif"] = update.message.text.upper()
+    await update.message.reply_text(
+        "¿Cuál es tu dirección completa?\n"
+        "Ejemplo: Calle Mayor 1, 08001 Barcelona"
+    )
+    return REGISTRO_DIRECCION
+
+async def registro_direccion(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Recibe la dirección del autónomo"""
+    context.user_data["reg_direccion"] = update.message.text
+    await update.message.reply_text("¿Cuál es tu teléfono de contacto?")
+    return REGISTRO_TELEFONO
+
+async def registro_telefono(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Recibe el teléfono del autónomo"""
+    context.user_data["reg_telefono"] = update.message.text
+    await update.message.reply_text("¿Cuál es tu email?")
+    return REGISTRO_EMAIL
+
+async def registro_email(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Recibe el email y guarda toda la configuración"""
+    config = {
+        "nombre": context.user_data["reg_nombre"],
+        "nif": context.user_data["reg_nif"],
+        "direccion": context.user_data["reg_direccion"],
+        "telefono": context.user_data["reg_telefono"],
+        "email": update.message.text
+    }
+    chat_id = update.effective_chat.id
+    guardar_config(chat_id, config)
+    await update.message.reply_text(
+        f"✅ *Configuración guardada correctamente.*\n\n"
+        f"👤 *Nombre:* {config['nombre']}\n"
+        f"🪪 *NIF:* {config['nif']}\n"
+        f"📍 *Dirección:* {config['direccion']}\n"
+        f"📞 *Teléfono:* {config['telefono']}\n"
+        f"📧 *Email:* {config['email']}\n\n"
+        "Ya puedes empezar a crear facturas y presupuestos.\n\n"
+        "Envíame una nota de voz describiendo el trabajo y te generaré "
+        "una *factura* o *presupuesto* al instante.\n\n"
+        "Puedes decir por ejemplo:\n"
+        "• _'Hazme una factura para Juan García, dirección Calle Mayor 1, "
+        "reparación de tubería, 3 horas a 35 euros/h, desplazamiento 20 euros'_\n\n"
+        "• _'Necesito un presupuesto para Maria López, reforma de cocina, "
+        "materiales 500 euros, 8 horas a 30 euros'_\n\n"
+        "Intenta incluir:\n"
+        "• Nombre y dirección del cliente\n"
+        "• Trabajo realizado\n"
+        "• Materiales usados y su precio\n"
+        "• Horas trabajadas y precio por hora\n"
+        "• Desplazamiento si lo hay\n"
+        "• Fecha del trabajo",
+        parse_mode="Markdown"
+    )
+    return ESPERANDO_AUDIO
+
+async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Recibe el audio, transcribe con Whisper y estructura con ChatGPT"""
+    await update.message.reply_text("🎙️ Audio recibido, transcribiendo...")
+
+    # Descarga el audio desde los servidores de Telegram
+    file = await context.bot.get_file(update.message.voice.file_id)
+    audio_path = "audio.ogg"
+    await file.download_to_drive(audio_path)
+
+    # Transcribe con Whisper
+    with open(audio_path, "rb") as audio_file:
+        transcription = client.audio.transcriptions.create(
+            model="whisper-1",
+            file=audio_file,
+            language="es"
+        )
+
+    texto = transcription.text
+    print(f"Transcripción: {texto}")
+    await update.message.reply_text(
+        f"📝 He entendido:\n_{texto}_",
+        parse_mode="Markdown"
+    )
+    await update.message.reply_text("⚙️ Estructurando datos...")
+
+    # Envía la transcripción a ChatGPT para estructurarla
+    respuesta = client.chat.completions.create(
+        model="gpt-4o-mini",
+        messages=[
+            {"role": "system", "content": get_prompt_sistema()},
+            {"role": "user", "content": texto}
+        ]
+    )
+
+    try:
+        datos = json.loads(respuesta.choices[0].message.content)
+        context.user_data["datos_factura"] = datos
+        context.user_data["transcripcion"] = texto
+        context.user_data["tipo_detectado"] = datos.get("tipo")
+        context.user_data["campos_editados"] = []
+        context.user_data["numero_ediciones"] = 0
+        context.user_data["tiempo_inicio"] = datetime.now().timestamp()
+        tipo = datos.get("tipo")
+
+        # Punto 5 — fallback si GPT no detectó el tipo
+        if not tipo:
+            teclado_tipo = InlineKeyboardMarkup([
+                [
+                    InlineKeyboardButton("📄 Factura", callback_data="tipo_factura"),
+                    InlineKeyboardButton("📋 Presupuesto", callback_data="tipo_presupuesto")
+                ]
+            ])
+            await update.message.reply_text(
+                "🤖 No he entendido si es una factura o un presupuesto.\n"
+                "¿Qué documento necesitas?",
+                reply_markup=teclado_tipo
+            )
+            return ESPERANDO_CONFIRMACION
+
+        # Flujo normal si tipo detectado
+        await update.message.reply_text(
+            construir_resumen(datos),
+            parse_mode="Markdown",
+            reply_markup=construir_teclado_confirmacion(tipo)
+        )
+        return ESPERANDO_CONFIRMACION
+
+    except json.JSONDecodeError:
+        await update.message.reply_text(
+            "❌ No he podido estructurar los datos. Por favor, envía otra nota de voz."
+        )
+        return ESPERANDO_AUDIO
+
+async def handle_confirmacion(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Gestiona todos los botones inline del flujo de confirmación"""
+    query = update.callback_query
+    await query.answer()
+    if query.data in ("tipo_factura", "tipo_presupuesto"):
+        datos = context.user_data.get("datos_factura")
+        datos["tipo"] = "factura" if query.data == "tipo_factura" else "presupuesto"
+        if datos["tipo"] == "presupuesto":
+            datos["validez_dias"] = 30
+        context.user_data["datos_factura"] = datos
+        tipo = datos["tipo"]
+        await query.edit_message_text(
+            construir_resumen(datos),
+            parse_mode="Markdown",
+            reply_markup=construir_teclado_confirmacion(tipo)
+        )
+        return ESPERANDO_CONFIRMACION
+    elif query.data in ("cambiar_tipo_factura", "cambiar_tipo_presupuesto"):
+            datos = context.user_data.get("datos_factura")
+            datos["tipo"] = "factura" if query.data == "cambiar_tipo_factura" else "presupuesto"
+            datos["validez_dias"] = 30 if datos["tipo"] == "presupuesto" else None
+            context.user_data["datos_factura"] = datos
+            tipo = datos["tipo"]
+            await query.edit_message_text(
+                construir_resumen(datos),
+                parse_mode="Markdown",
+                reply_markup=construir_teclado_confirmacion(tipo)
+            )
+            return ESPERANDO_CONFIRMACION
+    elif query.data in ("confirmar_factura", "confirmar_presupuesto"):
+        datos = context.user_data.get("datos_factura")
+        tipo = datos.get("tipo", "factura")
+        es_presupuesto = tipo == "presupuesto"
+
+        await query.message.reply_text(
+            "⏳ Generando presupuesto PDF..." if es_presupuesto else "⏳ Generando factura PDF..."
+        )
+
+        chat_id = query.message.chat_id
+        numero = get_siguiente_numero_presupuesto(chat_id) if es_presupuesto else get_siguiente_numero_factura(chat_id)
+        nombre_pdf = generar_factura_pdf(
+            datos,
+            numero_factura=numero,
+            info_autonomo=cargar_config(chat_id),
+            tipo=tipo
+)
+
+        prefijo = "presupuesto" if es_presupuesto else "factura"
+        emoji = "📋" if es_presupuesto else "🎉"
+        chat_id = query.message.chat_id
+        segundos = int(datetime.now().timestamp() - context.user_data.get("tiempo_inicio", datetime.now().timestamp()))
+        guardar_log(chat_id, {
+            "transcripcion": context.user_data.get("transcripcion"),
+            "tipo_detectado": context.user_data.get("tipo_detectado"),
+            "json_estructurado": datos,
+            "tipo_final": tipo,
+            "campos_editados": context.user_data.get("campos_editados", []),
+            "numero_ediciones": context.user_data.get("numero_ediciones", 0),
+            "numero_documento": numero,
+            "total_factura": datos.get("total"),
+            "concepto": datos.get("concepto"),
+            "accion_final": "confirmado",
+            "segundos_hasta_confirmacion": segundos
+        })
+        with open(nombre_pdf, "rb") as pdf:
+            await query.message.reply_document(
+                document=pdf,
+                filename=f"{prefijo}_{numero}.pdf",
+                caption=f"{emoji} {prefijo.capitalize()} *{numero}* generada correctamente.",
+                parse_mode="Markdown"
+            )
+
+        teclado_nuevo = InlineKeyboardMarkup([
+            [
+                InlineKeyboardButton("➕ Nueva factura", callback_data="nueva_factura"),
+                InlineKeyboardButton("📋 Nuevo presupuesto", callback_data="nueva_factura")
+            ]
+        ])
+        await query.message.reply_text(
+            "¿Quieres crear otro documento?",
+            reply_markup=teclado_nuevo
+        )
+        return ESPERANDO_CONFIRMACION
+    elif query.data == "editar":
+        await query.message.reply_text(
+            "✏️ *¿Qué campo quieres corregir?*",
+            parse_mode="Markdown",
+            reply_markup=construir_teclado_campos()
+        )
+        return ESPERANDO_CONFIRMACION
+
+    elif query.data.startswith("campo_"):
+        campo = query.data.replace("campo_", "")
+        context.user_data["campo_editando"] = campo
+        nombres = {
+            "cliente_nombre": "nombre del cliente",
+            "cliente_direccion": "dirección del cliente",
+            "concepto": "trabajo realizado",
+            "materiales": "materiales (formato: descripcion:precio, descripcion:precio)",
+            "horas": "número de horas",
+            "precio_hora": "precio por hora",
+            "desplazamiento": "desplazamiento en €",
+            "fecha": "fecha (DD/MM/YYYY)",
+            "total": "total en €"
+        }
+        await query.edit_message_text(
+            f"✏️ Escribe el nuevo valor para *{nombres[campo]}*:",
+            parse_mode="Markdown"
+        )
+        return ESPERANDO_VALOR_CAMPO
+
+    elif query.data == "repetir":
+        await query.edit_message_text(
+            "🔄 Sin problema. Envía una nueva nota de voz con los datos del trabajo."
+        )
+        return ESPERANDO_AUDIO
+
+    elif query.data == "nueva_factura":
+        await query.edit_message_text(
+            "👋 Envíame una nota de voz describiendo el trabajo y te generaré "
+            "una *factura* o *presupuesto* al instante.\n\n"
+            "Puedes decir por ejemplo:\n"
+            "• _'Hazme una factura para Juan García...'_\n"
+            "• _'Necesito un presupuesto para una reforma...'_\n\n"
+            "Intenta incluir:\n"
+            "• Nombre del cliente\n"
+            "• Dirección \n"
+            "• Trabajo realizado\n"
+            "• Materiales usados y su precio\n"
+            "• Horas trabajadas y precio por hora\n"
+            "• Desplazamiento si lo hay\n"
+            "• Fecha del trabajo"
+        )
+        return ESPERANDO_AUDIO
+
+async def handle_valor_campo(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Recibe el texto del campo corregido y actualiza los datos"""
+    campo = context.user_data.get("campo_editando")
+    valor = update.message.text
+    datos = context.user_data.get("datos_factura")
+
+    if campo == "materiales":
+        try:
+            nuevos_materiales = []
+            for item in valor.split(","):
+                partes = item.strip().split(":")
+                nuevos_materiales.append({
+                    "descripcion": partes[0].strip(),
+                    "precio": float(partes[1].strip())
+                })
+            datos["materiales"] = nuevos_materiales
+        except Exception:
+            await update.message.reply_text(
+                "❌ Formato incorrecto. Usa: descripcion:precio, descripcion:precio\n"
+                "Ejemplo: Grifo Roca:40, Tubería PVC:6.99"
+            )
+            return ESPERANDO_VALOR_CAMPO
+    elif campo in ["horas", "precio_hora", "desplazamiento", "total"]:
+        try:
+            datos[campo] = float(valor.replace(",", "."))
+        except ValueError:
+            await update.message.reply_text("❌ Introduce un número válido.")
+            return ESPERANDO_VALOR_CAMPO
+    else:
+        datos[campo] = valor
+
+    # Recalcula el total automáticamente
+    total_materiales = sum(m["precio"] for m in datos["materiales"]) if datos["materiales"] else 0
+    total_horas = (datos["horas"] or 0) * (datos["precio_hora"] or 0)
+    datos["total"] = total_materiales + total_horas + (datos["desplazamiento"] or 0)
+    context.user_data["datos_factura"] = datos
+    context.user_data["campos_editados"].append(campo)
+    context.user_data["numero_ediciones"] = context.user_data.get("numero_ediciones", 0) + 1
+    tipo = datos.get("tipo", "factura")
+    await update.message.reply_text(
+        construir_resumen(datos),
+        parse_mode="Markdown",
+        reply_markup=construir_teclado_confirmacion(tipo)
+    )
+    return ESPERANDO_CONFIRMACION
+
+async def cancelar(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Comando /cancelar — sale del flujo en cualquier momento"""
+    await update.message.reply_text(
+        "Operación cancelada. Envía /start para empezar de nuevo.",
+        reply_markup=ReplyKeyboardRemove()
+    )
+    return ConversationHandler.END
+
+# ConversationHandler — gestiona el estado de cada usuario
+conv_handler = ConversationHandler(
+    entry_points=[
+        CommandHandler("start", start),
+        MessageHandler(filters.VOICE, handle_voice)
+    ],
+    states={
+        REGISTRO_NOMBRE: [
+            MessageHandler(filters.TEXT & ~filters.COMMAND, registro_nombre)
+        ],
+        REGISTRO_NIF: [
+            MessageHandler(filters.TEXT & ~filters.COMMAND, registro_nif)
+        ],
+        REGISTRO_DIRECCION: [
+            MessageHandler(filters.TEXT & ~filters.COMMAND, registro_direccion)
+        ],
+        REGISTRO_TELEFONO: [
+            MessageHandler(filters.TEXT & ~filters.COMMAND, registro_telefono)
+        ],
+        REGISTRO_EMAIL: [
+            MessageHandler(filters.TEXT & ~filters.COMMAND, registro_email)
+        ],
+        ESPERANDO_AUDIO: [
+            MessageHandler(filters.VOICE, handle_voice),
+            CallbackQueryHandler(handle_confirmacion)
+        ],
+        ESPERANDO_CONFIRMACION: [
+            CallbackQueryHandler(handle_confirmacion),
+            MessageHandler(filters.VOICE, handle_voice)
+        ],
+        ESPERANDO_VALOR_CAMPO: [
+            MessageHandler(filters.TEXT & ~filters.COMMAND, handle_valor_campo)
+        ]
+    },
+    fallbacks=[CommandHandler("cancelar", cancelar)]
+)
+
+# Construye y arranca el bot
+app = ApplicationBuilder().token(TELEGRAM_TOKEN).build()
+app.add_handler(conv_handler)
+
+init_db()
+print("Bot activo...")
+app.run_polling()

@@ -1,0 +1,7 @@
+.env
+autonomo_config.json
+audio.ogg
+__pycache__/
+*.pyc
+*.ogg
+.DS_Store
