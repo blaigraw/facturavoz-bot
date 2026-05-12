@@ -577,7 +577,6 @@ async def privacidad(update: Update, context: ContextTypes.DEFAULT_TYPE):
 conv_handler = ConversationHandler(
     entry_points=[
         CommandHandler("start", start),
-        CommandHandler("privacidad", privacidad),
         MessageHandler(filters.VOICE, handle_voice)
     ],
     states={
@@ -620,4 +619,5 @@ app.add_handler(conv_handler)
 
 init_db()
 print("Bot activo...")
+app.add_handler(CommandHandler("privacidad", privacidad))
 app.run_polling()
