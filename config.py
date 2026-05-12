@@ -152,9 +152,11 @@ def guardar_consentimiento(chat_id, tipo):
         conn.commit()
 
 def tiene_consentimiento(chat_id):
-    """Comprueba si el usuario ya dio consentimiento"""
+    """Comprueba si el usuario ya dio consentimiento explícito"""
     with get_conn() as conn:
         with conn.cursor() as cur:
             cur.execute("SELECT consent_given FROM usuarios WHERE chat_id = %s", (chat_id,))
             row = cur.fetchone()
-            return row is not None
+            if not row:
+                return False
+            return row[0] is True  # Solo True explícito, no NULL
