@@ -610,7 +610,10 @@ conv_handler = ConversationHandler(
             CallbackQueryHandler(handle_consentimiento)
         ],
     },
-    fallbacks=[CommandHandler("cancelar", cancelar)]
+    fallbacks=[
+        CommandHandler("cancelar", cancelar),
+        CallbackQueryHandler(handle_consentimiento, pattern="^consent_")
+    ]
 )
 
 # Construye y arranca el bot
