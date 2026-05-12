@@ -611,8 +611,8 @@ conv_handler = ConversationHandler(
         ],
     },
     fallbacks=[
-        CommandHandler("cancelar", cancelar),
-        CallbackQueryHandler(handle_consentimiento, pattern="^consent_")
+    CommandHandler("cancelar", cancelar),
+    CallbackQueryHandler(handle_consentimiento, pattern="^consent_")
     ]
 )
 
