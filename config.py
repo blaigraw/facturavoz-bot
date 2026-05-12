@@ -27,6 +27,11 @@ def init_db():
                 )
             """)
             cur.execute("""
+                ALTER TABLE usuarios 
+                ADD COLUMN IF NOT EXISTS consent_given BOOLEAN DEFAULT FALSE,
+                ADD COLUMN IF NOT EXISTS consent_date TIMESTAMP
+            """)
+            cur.execute("""
                 CREATE TABLE IF NOT EXISTS logs (
                     id SERIAL PRIMARY KEY,
                     chat_id BIGINT,
@@ -136,3 +141,20 @@ def guardar_log(chat_id, datos):
             conn.commit()
     except Exception as e:
         print(f"Error guardando log: {e}")
+def guardar_consentimiento(chat_id, tipo):
+    """Guarda el consentimiento del usuario. tipo: 'completo', 'basico', 'no'"""
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute("""
+                UPDATE usuarios SET consent_given = %s, consent_date = NOW()
+                WHERE chat_id = %s
+            """, (tipo != 'no', chat_id))
+        conn.commit()
+
+def tiene_consentimiento(chat_id):
+    """Comprueba si el usuario ya dio consentimiento"""
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute("SELECT consent_given FROM usuarios WHERE chat_id = %s", (chat_id,))
+            row = cur.fetchone()
+            return row is not None

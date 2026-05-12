@@ -1,7 +1,7 @@
 import os
 import json
 from datetime import datetime
-from config import config_existe, guardar_config, cargar_config, get_siguiente_numero_factura, get_siguiente_numero_presupuesto, init_db, guardar_log
+from config import config_existe, guardar_config, cargar_config, get_siguiente_numero_factura, get_siguiente_numero_presupuesto, init_db, guardar_log, guardar_consentimiento, tiene_consentimiento
 from holded import crear_factura
 from factura_pdf import generar_factura_pdf
 from openai import OpenAI
@@ -31,6 +31,7 @@ REGISTRO_NIF = 4
 REGISTRO_DIRECCION = 5
 REGISTRO_TELEFONO = 6
 REGISTRO_EMAIL = 7
+ESPERANDO_CONSENTIMIENTO = 8
 
 def get_prompt_sistema():
     """Genera el prompt con la fecha de hoy actualizada"""
@@ -157,36 +158,82 @@ def construir_teclado_campos():
             InlineKeyboardButton("💵 Total", callback_data="campo_total")
         ]
      ])
+async def pedir_consentimiento(update: Update):
+    """Muestra el mensaje de consentimiento RGPD"""
+    teclado = InlineKeyboardMarkup([
+        [
+            InlineKeyboardButton("✅ Acepto todo", callback_data="consent_completo"),
+            InlineKeyboardButton("📋 Solo lo básico", callback_data="consent_basico"),
+        ],
+        [
+            InlineKeyboardButton("🚫 No acepto", callback_data="consent_no")
+        ]
+    ])
+    await update.message.reply_text(
+        "👋 Bienvenido a *FacturaVoz*\n\n"
+        "Para funcionar proceso tus notas de voz y genero facturas en PDF.\n\n"
+        "Opcionalmente, y solo con tu permiso, guardo las transcripciones "
+        "para mejorar el servicio.\n\n"
+        "📄 Usa /privacidad para más información.\n\n"
+        "¿Aceptas las condiciones?",
+        parse_mode="Markdown",
+        reply_markup=teclado
+    )
 
+async def handle_consentimiento(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Gestiona la respuesta al consentimiento RGPD"""
+    query = update.callback_query
+    await query.answer()
+    chat_id = query.message.chat_id
+
+    if query.data == "consent_no":
+        await query.edit_message_text(
+            "🚫 Sin tu consentimiento no puedo continuar.\n"
+            "Usa /start cuando quieras reconsiderarlo."
+        )
+        return ConversationHandler.END
+
+    tipo = "completo" if query.data == "consent_completo" else "basico"
+    guardar_consentimiento(chat_id, tipo)
+
+    await query.edit_message_text(
+        "✅ Gracias. Ya puedes empezar a usar FacturaVoz.\n\n"
+        "Envíame una nota de voz describiendo el trabajo."
+    )
+    return ESPERANDO_AUDIO
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Comando /start — comprueba si el autónomo ya está registrado"""
+    """Comando /start — comprueba registro y consentimiento"""
     chat_id = update.effective_chat.id
+
     if config_existe(chat_id):
+        if not tiene_consentimiento(chat_id):
+            await pedir_consentimiento(update)
+            return ESPERANDO_CONSENTIMIENTO
         config = cargar_config(chat_id)
         texto = (
-                f"👋 Hola de nuevo, {config['nombre']}.\n\n"
-                "Envíame una nota de voz describiendo el trabajo y te generaré "
-                "una *factura* o *presupuesto* al instante.\n\n"
-                "Puedes decir por ejemplo:\n"
-                "• _'Hazme una factura para Juan García...'_\n"
-                "• _'Necesito un presupuesto para una reforma...'_\n\n"
-                "Intenta incluir:\n"
-                "• Nombre y dirección del cliente\n"
-                "• Trabajo realizado\n"
-                "• Materiales usados y su precio\n"
-                "• Horas trabajadas y precio por hora\n"
-                "• Desplazamiento si lo hay\n"
-                "• Fecha del trabajo"
-            )
+            f"👋 Hola de nuevo, {config['nombre']}.\n\n"
+            "Envíame una nota de voz describiendo el trabajo y te generaré "
+            "una *factura* o *presupuesto* al instante.\n\n"
+            "Puedes decir por ejemplo:\n"
+            "• _'Hazme una factura para Juan García...'_\n"
+            "• _'Necesito un presupuesto para una reforma...'_\n\n"
+            "Intenta incluir:\n"
+            "• Nombre y dirección del cliente\n"
+            "• Trabajo realizado\n"
+            "• Materiales usados y su precio\n"
+            "• Horas trabajadas y precio por hora\n"
+            "• Desplazamiento si lo hay\n"
+            "• Fecha del trabajo"
+        )
         await update.message.reply_text(texto, parse_mode="Markdown")
         return ESPERANDO_AUDIO
     else:
-            await update.message.reply_text(
-                "👋 Hola, soy tu asistente de facturas.\n\n"
-                "Antes de empezar necesito configurar tus datos para las facturas.\n\n"
-                "¿Cuál es tu nombre completo o razón social?"
-            )
-            return REGISTRO_NOMBRE
+        await update.message.reply_text(
+            "👋 Hola, soy tu asistente de facturas.\n\n"
+            "Antes de empezar necesito configurar tus datos para las facturas.\n\n"
+            "¿Cuál es tu nombre completo o razón social?"
+        )
+        return REGISTRO_NOMBRE
 
 async def registro_nombre(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Recibe el nombre del autónomo"""
@@ -516,11 +563,21 @@ async def cancelar(update: Update, context: ContextTypes.DEFAULT_TYPE):
         reply_markup=ReplyKeyboardRemove()
     )
     return ConversationHandler.END
-
+async def privacidad(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text(
+        "🔒 *Política de privacidad de FacturaVoz*\n\n"
+        "• Procesamos tus notas de voz únicamente para generar facturas y presupuestos.\n"
+        "• Si aceptaste el consentimiento completo, guardamos transcripciones para mejorar el servicio.\n"
+        "• Nunca compartimos tus datos con terceros.\n"
+        "• Puedes solicitar el borrado de tus datos escribiendo a blaigraw@gmail.com\n\n"
+        "Para más información sobre el RGPD visita: https://www.aepd.es",
+        parse_mode="Markdown"
+    )
 # ConversationHandler — gestiona el estado de cada usuario
 conv_handler = ConversationHandler(
     entry_points=[
         CommandHandler("start", start),
+        CommandHandler("privacidad", privacidad),
         MessageHandler(filters.VOICE, handle_voice)
     ],
     states={
@@ -549,7 +606,10 @@ conv_handler = ConversationHandler(
         ],
         ESPERANDO_VALOR_CAMPO: [
             MessageHandler(filters.TEXT & ~filters.COMMAND, handle_valor_campo)
-        ]
+        ],
+        ESPERANDO_CONSENTIMIENTO: [
+            CallbackQueryHandler(handle_consentimiento)
+        ],
     },
     fallbacks=[CommandHandler("cancelar", cancelar)]
 )
