@@ -203,6 +203,7 @@ async def handle_consentimiento(update: Update, context: ContextTypes.DEFAULT_TY
     return ESPERANDO_AUDIO
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Comando /start — comprueba registro y consentimiento"""
+    context.user_data.clear()
     chat_id = update.effective_chat.id
 
     if config_existe(chat_id):
@@ -562,6 +563,7 @@ async def cancelar(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "Operación cancelada. Envía /start para empezar de nuevo.",
         reply_markup=ReplyKeyboardRemove()
     )
+    context.user_data.clear()
     return ConversationHandler.END
 async def privacidad(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
@@ -612,8 +614,10 @@ conv_handler = ConversationHandler(
     },
     fallbacks=[
     CommandHandler("cancelar", cancelar),
+    CommandHandler("start", start),
     CallbackQueryHandler(handle_consentimiento, pattern="^consent_")
-    ]
+    ],
+    allow_reentry=True
 )
 
 # Construye y arranca el bot
