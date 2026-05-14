@@ -709,8 +709,7 @@ conv_handler = ConversationHandler(
     CommandHandler("cancelar", cancelar),
     CommandHandler("start", start),
     CallbackQueryHandler(handle_consentimiento, pattern="^consent_")
-    ],
-    allow_reentry=True
+    ]
 )
 
 # Construye y arranca el bot
