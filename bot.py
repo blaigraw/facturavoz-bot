@@ -339,6 +339,10 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     try:
         datos = json.loads(respuesta.choices[0].message.content)
+        total_materiales = sum(m["precio"] for m in datos["materiales"]) if datos["materiales"] else 0
+        total_horas = (datos["horas"] or 0) * (datos["precio_hora"] or 0)
+        total_desplazamiento = datos["desplazamiento"] or 0
+        datos["total"] = round(total_materiales + total_horas + total_desplazamiento, 2)
         context.user_data["datos_factura"] = datos
         context.user_data["transcripcion"] = texto
         context.user_data["tipo_detectado"] = datos.get("tipo")
