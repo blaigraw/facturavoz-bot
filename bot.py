@@ -487,7 +487,7 @@ async def handle_confirmacion(update: Update, context: ContextTypes.DEFAULT_TYPE
             "fecha": "fecha",
             "total": "total en €"
         }
-        await query.edit_message_text(
+        await query.message.reply_text(
             f"✏️ *{nombres[campo].capitalize()}*: envía un audio o escríbelo directamente.\n/cancelar para salir.",
             parse_mode="Markdown"
         )
@@ -696,7 +696,6 @@ conv_handler = ConversationHandler(
         ],
         ESPERANDO_CONFIRMACION: [
             CallbackQueryHandler(handle_confirmacion),
-            MessageHandler(filters.VOICE, handle_voice)
         ],
         ESPERANDO_VALOR_CAMPO: [
             MessageHandler(filters.VOICE, handle_voice_campo),
