@@ -338,7 +338,9 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
     try:
-        datos = json.loads(respuesta.choices[0].message.content)
+        contenido = respuesta.choices[0].message.content.strip()
+        contenido = contenido.replace("```json", "").replace("```", "").strip()
+        datos = json.loads(contenido)
         total_materiales = sum(m["precio"] for m in datos["materiales"]) if datos["materiales"] else 0
         total_horas = (datos["horas"] or 0) * (datos["precio_hora"] or 0)
         total_desplazamiento = datos["desplazamiento"] or 0
@@ -552,7 +554,9 @@ Devuelve SOLO el JSON, sin texto adicional.
         messages=[{"role": "user", "content": prompt}]
     )
 
-    return json.loads(respuesta.choices[0].message.content)
+    contenido = respuesta.choices[0].message.content.strip()
+    contenido = contenido.replace("```json", "").replace("```", "").strip()
+    return json.loads(contenido)
 
 
 async def handle_valor_campo(update: Update, context: ContextTypes.DEFAULT_TYPE):
