@@ -488,7 +488,7 @@ async def handle_confirmacion(update: Update, context: ContextTypes.DEFAULT_TYPE
             "total": "total en €"
         }
         await query.edit_message_text(
-            f"✏️ Escribe el nuevo valor para *{nombres[campo]}* en lenguaje natural:",
+            f"✏️ *{nombres[campo].capitalize()}*: envía un audio o escríbelo directamente.\n/cancelar para salir.",
             parse_mode="Markdown"
         )
         return ESPERANDO_VALOR_CAMPO
@@ -699,8 +699,8 @@ conv_handler = ConversationHandler(
             MessageHandler(filters.VOICE, handle_voice)
         ],
         ESPERANDO_VALOR_CAMPO: [
-            MessageHandler(filters.TEXT & ~filters.COMMAND, handle_valor_campo),
             MessageHandler(filters.VOICE, handle_voice_campo),
+            MessageHandler(filters.TEXT & ~filters.COMMAND, handle_valor_campo),
         ],
         ESPERANDO_CONSENTIMIENTO: [
             CallbackQueryHandler(handle_consentimiento)
