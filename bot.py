@@ -484,7 +484,7 @@ async def handle_confirmacion(update: Update, context: ContextTypes.DEFAULT_TYPE
             "horas": "número de horas",
             "precio_hora": "precio por hora",
             "desplazamiento": "desplazamiento en €",
-            "fecha": "fecha (DD/MM/YYYY)",
+            "fecha": "fecha",
             "total": "total en €"
         }
         await query.edit_message_text(
