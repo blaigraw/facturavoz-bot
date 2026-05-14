@@ -596,6 +596,60 @@ async def handle_valor_campo(update: Update, context: ContextTypes.DEFAULT_TYPE)
     )
     return ESPERANDO_CONFIRMACION
 
+async def handle_voice_campo(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Recibe un audio para editar un campo, transcribe y procesa igual que texto"""
+    campo = context.user_data.get("campo_editando")
+    datos = context.user_data.get("datos_factura")
+
+    await update.message.reply_text("🎙️ Audio recibido, transcribiendo...")
+
+    file = await context.bot.get_file(update.message.voice.file_id)
+    audio_path = "audio_campo.ogg"
+    await file.download_to_drive(audio_path)
+
+    with open(audio_path, "rb") as audio_file:
+        transcription = client.audio.transcriptions.create(
+            model="whisper-1",
+            file=audio_file,
+            language="es"
+        )
+
+    valor = transcription.text
+    await update.message.reply_text(
+        f"📝 He entendido: _{valor}_",
+        parse_mode="Markdown"
+    )
+    await update.message.reply_text("⚙️ Interpretando...")
+
+    try:
+        resultado = await interpretar_campo_con_gpt(campo, valor, datos)
+        for key, val in resultado.items():
+            datos[key] = val
+    except Exception:
+        await update.message.reply_text(
+            "❌ No he podido interpretar el audio. "
+            "Intenta de nuevo o escríbelo."
+        )
+        return ESPERANDO_VALOR_CAMPO
+
+    # Recalcula el total en Python siempre
+    total_materiales = sum(m["precio"] for m in datos["materiales"]) if datos["materiales"] else 0
+    total_horas = (datos["horas"] or 0) * (datos["precio_hora"] or 0)
+    datos["total"] = round(total_materiales + total_horas + (datos["desplazamiento"] or 0), 2)
+
+    context.user_data["datos_factura"] = datos
+    context.user_data["campos_editados"].append(campo)
+    context.user_data["numero_ediciones"] = context.user_data.get("numero_ediciones", 0) + 1
+
+    tipo = datos.get("tipo", "factura")
+    await update.message.reply_text(
+        construir_resumen(datos),
+        parse_mode="Markdown",
+        reply_markup=construir_teclado_confirmacion(tipo)
+    )
+    return ESPERANDO_CONFIRMACION
+
+
 async def cancelar(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Comando /cancelar — sale del flujo en cualquier momento"""
     await update.message.reply_text(
@@ -645,7 +699,8 @@ conv_handler = ConversationHandler(
             MessageHandler(filters.VOICE, handle_voice)
         ],
         ESPERANDO_VALOR_CAMPO: [
-            MessageHandler(filters.TEXT & ~filters.COMMAND, handle_valor_campo)
+            MessageHandler(filters.TEXT & ~filters.COMMAND, handle_valor_campo),
+            MessageHandler(filters.VOICE, handle_voice_campo),
         ],
         ESPERANDO_CONSENTIMIENTO: [
             CallbackQueryHandler(handle_consentimiento)
