@@ -478,7 +478,7 @@ async def handle_confirmacion(update: Update, context: ContextTypes.DEFAULT_TYPE
             "cliente_nombre": "nombre del cliente",
             "cliente_direccion": "dirección del cliente",
             "concepto": "trabajo realizado",
-            "materiales": "materiales (formato: descripcion:precio, descripcion:precio)",
+            "materiales": "materiales",
             "horas": "número de horas",
             "precio_hora": "precio por hora",
             "desplazamiento": "desplazamiento en €",
@@ -486,7 +486,7 @@ async def handle_confirmacion(update: Update, context: ContextTypes.DEFAULT_TYPE
             "total": "total en €"
         }
         await query.edit_message_text(
-            f"✏️ Escribe el nuevo valor para *{nombres[campo]}*:",
+            f"✏️ Escribe el nuevo valor para *{nombres[campo]}* en lenguaje natural:",
             parse_mode="Markdown"
         )
         return ESPERANDO_VALOR_CAMPO
@@ -515,44 +515,75 @@ async def handle_confirmacion(update: Update, context: ContextTypes.DEFAULT_TYPE
         )
         return ESPERANDO_AUDIO
 
+async def interpretar_campo_con_gpt(campo, valor_texto, datos_actuales):
+    """Interpreta lenguaje natural para un campo y devuelve el valor correcto"""
+    hoy = datetime.now().strftime("%d/%m/%Y")
+
+    prompt = f"""
+Eres un asistente que interpreta texto informal de autónomos españoles
+del sector construcción para actualizar campos de una factura.
+
+Campo a actualizar: {campo}
+Texto del usuario: "{valor_texto}"
+Datos actuales de la factura: {json.dumps(datos_actuales, ensure_ascii=False)}
+Fecha de hoy: {hoy}
+
+Devuelve SOLO un JSON con el campo actualizado. Ejemplos por campo:
+
+- horas: {{"horas": 4.5}}  ← interpreta "cuatro y media", "4h30", "unas 5 horas"
+- precio_hora: {{"precio_hora": 35.0}}  ← interpreta "a 35 la hora", "35€/h"
+- desplazamiento: {{"desplazamiento": 20.0}}  ← interpreta "20 de gasolina", "veinte euros"
+- fecha: {{"fecha": "15/05/2025"}}  ← interpreta "ayer", "el lunes", "15 de mayo"
+- cliente_nombre: {{"cliente_nombre": "Juan García López"}}  ← capitaliza correctamente
+- cliente_direccion: {{"cliente_direccion": "Calle Mayor, 1, 28001 Madrid"}}  ← formato postal
+- concepto: {{"concepto": "Reparación de tubería de agua fría"}}  ← primera letra mayúscula
+- materiales: {{"materiales": [{{"descripcion": "Grifo Roca", "precio": 45.0}}]}}
+  Para materiales, interpreta lenguaje como:
+  "añade un grifo Roca por 45 euros" → añade a los materiales existentes
+  "quita el primero" → elimina el primer material
+  "cambia todo: tubería PVC 12 euros, cinta teflón 2 euros" → reemplaza todos
+  "un grifo 45, tubería 12, cinta 2" → reemplaza todos
+
+Devuelve SOLO el JSON, sin texto adicional.
+"""
+
+    respuesta = client.chat.completions.create(
+        model="gpt-4o-mini",
+        messages=[{"role": "user", "content": prompt}]
+    )
+
+    return json.loads(respuesta.choices[0].message.content)
+
+
 async def handle_valor_campo(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Recibe el texto del campo corregido y actualiza los datos"""
+    """Recibe el texto del campo corregido, lo interpreta con GPT y actualiza"""
     campo = context.user_data.get("campo_editando")
     valor = update.message.text
     datos = context.user_data.get("datos_factura")
 
-    if campo == "materiales":
-        try:
-            nuevos_materiales = []
-            for item in valor.split(","):
-                partes = item.strip().split(":")
-                nuevos_materiales.append({
-                    "descripcion": partes[0].strip(),
-                    "precio": float(partes[1].strip())
-                })
-            datos["materiales"] = nuevos_materiales
-        except Exception:
-            await update.message.reply_text(
-                "❌ Formato incorrecto. Usa: descripcion:precio, descripcion:precio\n"
-                "Ejemplo: Grifo Roca:40, Tubería PVC:6.99"
-            )
-            return ESPERANDO_VALOR_CAMPO
-    elif campo in ["horas", "precio_hora", "desplazamiento", "total"]:
-        try:
-            datos[campo] = float(valor.replace(",", "."))
-        except ValueError:
-            await update.message.reply_text("❌ Introduce un número válido.")
-            return ESPERANDO_VALOR_CAMPO
-    else:
-        datos[campo] = valor
+    await update.message.reply_text("⚙️ Interpretando...")
 
-    # Recalcula el total automáticamente
+    try:
+        resultado = await interpretar_campo_con_gpt(campo, valor, datos)
+
+        for key, val in resultado.items():
+            datos[key] = val
+
+    except Exception:
+        await update.message.reply_text(
+            "❌ No he podido interpretar ese valor. Intenta escribirlo de otra forma."
+        )
+        return ESPERANDO_VALOR_CAMPO
+
+    # Recalcula el total en Python siempre
     total_materiales = sum(m["precio"] for m in datos["materiales"]) if datos["materiales"] else 0
     total_horas = (datos["horas"] or 0) * (datos["precio_hora"] or 0)
-    datos["total"] = total_materiales + total_horas + (datos["desplazamiento"] or 0)
+    datos["total"] = round(total_materiales + total_horas + (datos["desplazamiento"] or 0), 2)
+
     context.user_data["datos_factura"] = datos
     context.user_data["campos_editados"].append(campo)
     context.user_data["numero_ediciones"] = context.user_data.get("numero_ediciones", 0) + 1
+
     tipo = datos.get("tipo", "factura")
     await update.message.reply_text(
         construir_resumen(datos),
