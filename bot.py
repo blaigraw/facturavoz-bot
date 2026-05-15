@@ -493,6 +493,88 @@ async def handle_confirmacion(update: Update, context: ContextTypes.DEFAULT_TYPE
             )
             return ESPERANDO_IBAN
 
+    elif query.data == "audio_reemplazar":
+        audio_path = context.user_data.get("audio_pendiente_path")
+        if not audio_path:
+            await query.message.reply_text("❌ No encontré el audio.")
+            return ESPERANDO_CONFIRMACION
+        context.user_data.clear()
+        await query.message.reply_text("🎙️ Procesando audio...")
+        with open(audio_path, "rb") as audio_file:
+            transcription = client.audio.transcriptions.create(
+                model="whisper-1",
+                file=audio_file,
+                language="es"
+            )
+        texto = transcription.text
+        await query.message.reply_text(
+            f"📝 He entendido:\n_{texto}_",
+            parse_mode="Markdown"
+        )
+        await query.message.reply_text("⚙️ Estructurando datos...")
+        respuesta = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {"role": "system", "content": get_prompt_sistema()},
+                {"role": "user", "content": texto}
+            ]
+        )
+        try:
+            contenido = respuesta.choices[0].message.content.strip()
+            contenido = contenido.replace("```json", "").replace("```", "").strip()
+            datos = json.loads(contenido)
+            total_materiales = sum(m["precio"] for m in datos["materiales"]) if datos.get("materiales") else 0
+            total_horas = (datos.get("horas") or 0) * (datos.get("precio_hora") or 0)
+            datos["total"] = round(total_materiales + total_horas + (datos.get("desplazamiento") or 0), 2)
+            context.user_data["datos_factura"] = datos
+            context.user_data["transcripcion"] = texto
+            context.user_data["tipo_detectado"] = datos.get("tipo")
+            context.user_data["campos_editados"] = []
+            context.user_data["numero_ediciones"] = 0
+            context.user_data["tiempo_inicio"] = datetime.now().timestamp()
+            tipo = datos.get("tipo")
+            if not tipo:
+                teclado_tipo = InlineKeyboardMarkup([
+                    [
+                        InlineKeyboardButton("📄 Factura", callback_data="tipo_factura"),
+                        InlineKeyboardButton("📋 Presupuesto", callback_data="tipo_presupuesto")
+                    ]
+                ])
+                await query.message.reply_text(
+                    "🤖 No he entendido si es una factura o un presupuesto.\n"
+                    "¿Qué documento necesitas?",
+                    reply_markup=teclado_tipo
+                )
+            else:
+                config = cargar_config(query.message.chat_id)
+                iva_porcentaje = config.get("iva", 0.21)
+                await query.message.reply_text(
+                    construir_resumen(datos, iva_porcentaje),
+                    parse_mode="Markdown",
+                    reply_markup=construir_teclado_confirmacion(tipo)
+                )
+        except json.JSONDecodeError:
+            await query.message.reply_text(
+                "❌ No he podido estructurar los datos. "
+                "Envía otra nota de voz."
+            )
+        return ESPERANDO_CONFIRMACION
+
+    elif query.data == "audio_cancelar":
+        await query.edit_message_text(
+            "❌ Audio descartado. Tu factura anterior sigue activa."
+        )
+        datos = context.user_data.get("datos_factura")
+        if datos:
+            config = cargar_config(query.message.chat_id)
+            iva_porcentaje = config.get("iva", 0.21)
+            await query.message.reply_text(
+                construir_resumen(datos, iva_porcentaje),
+                parse_mode="Markdown",
+                reply_markup=construir_teclado_confirmacion(datos.get("tipo", "factura"))
+            )
+        return ESPERANDO_CONFIRMACION
+
     elif query.data == "editar":
         await query.message.reply_text(
             "✏️ *¿Qué campo quieres corregir?*",
@@ -827,6 +909,27 @@ async def handle_iban(update: Update, context: ContextTypes.DEFAULT_TYPE):
     return ESPERANDO_CONFIRMACION
 
 
+async def handle_voice_inesperado(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Gestiona un audio mandado mientras hay un resumen activo"""
+    file = await context.bot.get_file(update.message.voice.file_id)
+    audio_path = "audio_pendiente.ogg"
+    await file.download_to_drive(audio_path)
+    context.user_data["audio_pendiente_path"] = audio_path
+
+    teclado = InlineKeyboardMarkup([
+        [
+            InlineKeyboardButton("🔄 Nueva factura con este audio", callback_data="audio_reemplazar"),
+            InlineKeyboardButton("❌ Cancelar", callback_data="audio_cancelar")
+        ]
+    ])
+    await update.message.reply_text(
+        "⚠️ Ya tienes una factura en curso.\n\n"
+        "¿Qué quieres hacer?",
+        reply_markup=teclado
+    )
+    return ESPERANDO_CONFIRMACION
+
+
 async def cancelar(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Comando /cancelar — sale del flujo en cualquier momento"""
     await update.message.reply_text(
@@ -1096,6 +1199,7 @@ conv_handler = ConversationHandler(
             CallbackQueryHandler(handle_confirmacion)
         ],
         ESPERANDO_CONFIRMACION: [
+            MessageHandler(filters.VOICE, handle_voice_inesperado),
             CallbackQueryHandler(handle_perfil_callbacks, pattern="^(perfil_|setiva_)"),
             CallbackQueryHandler(handle_confirmacion),
         ],
