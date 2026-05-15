@@ -896,7 +896,15 @@ async def handle_perfil_texto(update: Update, context: ContextTypes.DEFAULT_TYPE
     campo = context.user_data.get("perfil_campo_editando")
     if not campo:
         return
-    valor = update.message.text.strip()
+    valor_raw = update.message.text.strip()
+    await update.message.reply_text("⚙️ Interpretando...")
+    try:
+        resultado = await interpretar_campo_con_gpt(campo, valor_raw, {})
+        valor = list(resultado.values())[0]
+        if not isinstance(valor, str):
+            valor = str(valor)
+    except Exception:
+        valor = valor_raw
     context.user_data["perfil_valor_pendiente"] = valor
     teclado = InlineKeyboardMarkup([
         [
