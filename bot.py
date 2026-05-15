@@ -21,6 +21,7 @@ from telegram.ext import (
 load_dotenv(override=False)
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+ADMIN_CHAT_ID = int(os.getenv("ADMIN_CHAT_ID", "0"))
 
 # Estados de la conversación
 ESPERANDO_AUDIO = 0
@@ -787,6 +788,32 @@ async def cancelar(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
     context.user_data.clear()
     return ConversationHandler.END
+async def admin_reset(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Elimina el registro de un usuario — solo para el admin"""
+    if update.effective_chat.id != ADMIN_CHAT_ID:
+        return  # Silencioso — no revela que existe el comando
+
+    args = context.args
+    if not args:
+        target_id = update.effective_chat.id
+    else:
+        try:
+            target_id = int(args[0])
+        except ValueError:
+            await update.message.reply_text("❌ ID inválido.")
+            return
+
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute("DELETE FROM usuarios WHERE chat_id = %s", (target_id,))
+            cur.execute("DELETE FROM logs WHERE chat_id = %s", (target_id,))
+        conn.commit()
+
+    await update.message.reply_text(
+        f"✅ Usuario {target_id} eliminado de la base de datos."
+    )
+
+
 async def privacidad(update: Update, _context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         "🔒 *Política de privacidad de FacturaVoz*\n\n"
@@ -1061,5 +1088,6 @@ init_db()
 print("Bot activo...")
 app.add_handler(CommandHandler("privacidad", privacidad))
 app.add_handler(CommandHandler("perfil", cmd_perfil))
+app.add_handler(CommandHandler("admin_reset", admin_reset))
 app.add_handler(CallbackQueryHandler(handle_perfil_callbacks, pattern="^(perfil_|setiva_)"))
 app.run_polling()
