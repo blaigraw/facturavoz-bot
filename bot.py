@@ -1446,6 +1446,8 @@ async def mostrar_perfil(message, chat_id):
         iban_texto = " ".join(iban_raw[i:i+4] for i in range(0, len(iban_raw), 4))
     iva_actual = config.get("iva", 0.21)
     iva_texto = "21% General" if iva_actual == 0.21 else "10% Reducido" if iva_actual == 0.10 else "Sin IVA"
+    precio_hora_texto = f"{config.get('precio_hora')}€/h" if config.get('precio_hora') else "No configurado"
+    mostrar_precio_texto = "Sí" if config.get('mostrar_precio_hora', True) else "No"
     texto = (
         f"👤 *Tu perfil:*\n\n"
         f"*Nombre:* {config['nombre']}\n"
@@ -1454,7 +1456,9 @@ async def mostrar_perfil(message, chat_id):
         f"*Teléfono:* {config['telefono']}\n"
         f"*Email:* {config['email']}\n"
         f"*IBAN:* {iban_texto}\n"
-        f"*IVA habitual:* {iva_texto}\n\n"
+        f"*IVA habitual:* {iva_texto}\n"
+        f"*Precio/hora:* {precio_hora_texto}\n"
+        f"*Mostrar precio/hora en facturas:* {mostrar_precio_texto}\n\n"
         f"Pulsa un campo para editarlo:"
     )
     teclado = InlineKeyboardMarkup([
@@ -1472,7 +1476,11 @@ async def mostrar_perfil(message, chat_id):
         ],
         [
             InlineKeyboardButton("🧾 IVA", callback_data="perfil_iva"),
-        ]
+        ],
+        [
+            InlineKeyboardButton("💰 Precio/hora", callback_data="perfil_precio_hora"),
+            InlineKeyboardButton("🔒 Mostrar en factura", callback_data="perfil_mostrar_precio"),
+        ],
     ])
     await message.reply_text(texto, parse_mode="Markdown", reply_markup=teclado)
 
@@ -1514,6 +1522,8 @@ async def handle_perfil_callbacks(update: Update, context: ContextTypes.DEFAULT_
         "perfil_iban":               ("iban",               "💳 IBAN actual: {valor}\n\nEnvía el nuevo IBAN en audio o escrito."),
         "perfil_numero_factura":     ("numero_factura",     "🧾 Última factura registrada: {valor}\n\nEscribe el número de tu última factura."),
         "perfil_numero_presupuesto": ("numero_presupuesto", "📋 Último presupuesto registrado: {valor}\n\nEscribe el número de tu último presupuesto."),
+        "perfil_precio_hora":        ("precio_hora",        "💰 Precio/hora actual: {valor}\n\nEscribe el nuevo precio por hora (solo el número)."),
+        "perfil_mostrar_precio":     ("mostrar_precio_hora", "🔒 ¿Mostrar precio/hora en facturas?\n\nResponde 'si' o 'no'."),
     }
 
     if query.data in campos_perfil:
@@ -1542,6 +1552,35 @@ async def handle_perfil_callbacks(update: Update, context: ContextTypes.DEFAULT_
             await query.message.reply_text("✅ Guardado correctamente.")
             await mostrar_perfil(query.message, chat_id)
             return ESPERANDO_AUDIO
+        if campo == "precio_hora":
+            try:
+                precio = float(nuevo_valor.replace(",", ".").replace("€", "").strip())
+            except ValueError:
+                await query.message.reply_text("❌ Escribe solo el número, por ejemplo: 35 o 42.50")
+                return EDITANDO_PERFIL_CAMPO
+            config = cargar_config(chat_id)
+            config["precio_hora"] = precio
+            guardar_config(chat_id, config)
+            await query.message.reply_text("✅ Guardado correctamente.")
+            await mostrar_perfil(query.message, chat_id)
+            return ESPERANDO_AUDIO
+
+        if campo == "mostrar_precio_hora":
+            valor_lower = nuevo_valor.strip().lower()
+            if valor_lower in ("si", "sí", "yes", "s"):
+                mostrar = True
+            elif valor_lower in ("no", "n"):
+                mostrar = False
+            else:
+                await query.message.reply_text("❌ Escribe 'si' o 'no'.")
+                return EDITANDO_PERFIL_CAMPO
+            config = cargar_config(chat_id)
+            config["mostrar_precio_hora"] = mostrar
+            guardar_config(chat_id, config)
+            await query.message.reply_text("✅ Guardado correctamente.")
+            await mostrar_perfil(query.message, chat_id)
+            return ESPERANDO_AUDIO
+
         config = cargar_config(chat_id)
         config[campo] = nuevo_valor
         guardar_config(chat_id, config)
