@@ -1314,6 +1314,8 @@ conv_handler = ConversationHandler(
             MessageHandler(filters.VOICE, handle_voice_inesperado),
             CallbackQueryHandler(handle_perfil_callbacks, pattern="^(perfil_|setiva_)"),
             CallbackQueryHandler(handle_confirmacion),
+            CallbackQueryHandler(handle_onboarding_prueba, pattern="^onboarding_prueba$"),
+            CallbackQueryHandler(handle_onboarding_registro, pattern="^onboarding_registrar$"),
         ],
         ESPERANDO_VALOR_CAMPO: [
             MessageHandler(filters.VOICE, handle_voice_campo),
