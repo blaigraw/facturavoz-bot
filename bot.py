@@ -753,7 +753,7 @@ async def cancelar(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
     context.user_data.clear()
     return ConversationHandler.END
-async def privacidad(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def privacidad(update: Update, _context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         "🔒 *Política de privacidad de FacturaVoz*\n\n"
         "• Procesamos tus notas de voz únicamente para generar facturas y presupuestos.\n"
@@ -763,7 +763,7 @@ async def privacidad(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "Para más información sobre el RGPD visita: https://www.aepd.es",
         parse_mode="Markdown"
     )
-async def cmd_perfil(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def cmd_perfil(update: Update, _context: ContextTypes.DEFAULT_TYPE):
     """Muestra el perfil del autónomo con opciones de edición"""
     chat_id = update.effective_chat.id
     config = cargar_config(chat_id)
