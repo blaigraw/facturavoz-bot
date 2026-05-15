@@ -44,7 +44,7 @@ def get_prompt_sistema():
 Extrae datos de una nota de voz informal y devuelve SOLO este JSON, sin texto adicional ni bloques de código:
 
 {{"tipo": null, "cliente_nombre": null, "cliente_direccion": null, "concepto": null,
-"observaciones": null, "materiales": [{{"descripcion": null, "precio": 0.00}}],
+"observaciones": null, "materiales": [{{"descripcion": null, "precio": null}}],
 "horas": null, "precio_hora": null, "desplazamiento": null,
 "validez_dias": null, "fecha": "{hoy}", "total": 0.00}}
 
@@ -56,10 +56,11 @@ REGLAS:
 - cliente_nombre: capitaliza correctamente. Empresas en su formato oficial
 - cliente_direccion: formato postal español con abreviaciones (C/, Avda., Pza., Ctra.). Ejemplo: "C/ Mayor, 4, 2ºB, 28013 Madrid". CP solo si estás seguro
 - concepto: primera letra mayúscula, resto minúsculas. Redacta de forma clara y profesional
-- materiales descripcion: primera letra mayúscula. Marcas comerciales respetadas (Roca, Grohe, Schneider, Legrand, Baxi...)
-- materiales precio: usa siempre el precio que cobra al cliente, nunca su coste. "Me costó 108 pero cobro 135" → 135
-- materiales agrupados: si varios materiales se mencionan con un precio total compartido ("adhesivo, crucetas y lechada, todo junto 8 euros") → agrúpalos en UN solo ítem. Ejemplo: {{"descripcion": "Adhesivo, crucetas y lechada", "precio": 8.0}}
-- materiales sin precio: si un material se menciona sin precio → usa "precio": null. No uses 0.0 cuando el precio no se menciona
+- materiales descripcion: primera letra mayúscula, resto minúsculas. Marcas comerciales respetadas (Roca, Grohe, Schneider, Legrand, Baxi, Ferroli...)
+- materiales precio — cliente vs coste: si el autónomo menciona dos precios para un mismo material, uno como lo que le costó y otro como lo que cobra al cliente, usa SIEMPRE el precio que cobra al cliente. Ejemplos: "me costó 108 pero cobro 135" → 135 / "lo compré por 40, al cliente le pongo 50" → 50
+- materiales sin precio: si el autónomo dice que no sabe el precio, no lo recuerda, lo tiene que confirmar, o usa expresiones como "no sé cuánto fue", "no me acuerdo", "lo miro luego", "tengo que confirmarlo" → usa "precio": null. NUNCA uses 0.0 cuando el precio no se menciona o se indica incertidumbre.
+- materiales con precio individual: si cada material tiene su propio precio mencionado explícitamente → crea un ítem separado por material.
+- materiales agrupados: SOLO agrupa materiales en un único ítem cuando el autónomo mencione explícitamente un precio total compartido entre varios con expresiones como "todo junto", "entre los dos", "en total", "todo eso junto". Ejemplo correcto: "el adhesivo y las crucetas, todo junto 8 euros" → {{"descripcion": "Adhesivo y crucetas", "precio": 8.0}}. Ejemplo incorrecto: agrupar materiales con precios distintos o cuando uno no tiene precio.
 - observaciones: solo si menciona explícitamente algo para anotar (pago en efectivo, garantía, certificado). Máximo 2 líneas. Si no → null
 - total: suma materiales + (horas × precio_hora) + desplazamiento"""
 
