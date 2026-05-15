@@ -126,7 +126,7 @@ def get_siguiente_numero_factura(chat_id):
             numero = cur.fetchone()[0]
         conn.commit()
     año = datetime.now().year
-    return f"{año}-{numero:03d}"
+    return f"{año}-{numero:04d}"
 
 def get_siguiente_numero_presupuesto(chat_id):
     with get_conn() as conn:
@@ -139,7 +139,24 @@ def get_siguiente_numero_presupuesto(chat_id):
             numero = cur.fetchone()[0]
         conn.commit()
     año = datetime.now().year
-    return f"P-{año}-{numero:03d}"
+    return f"P-{año}-{numero:04d}"
+
+def guardar_numero_inicial_factura(chat_id, numero: int):
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute("""
+                UPDATE usuarios SET ultimo_numero_factura = %s WHERE chat_id = %s
+            """, (numero, chat_id))
+        conn.commit()
+
+def guardar_numero_inicial_presupuesto(chat_id, numero: int):
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute("""
+                UPDATE usuarios SET ultimo_numero_presupuesto = %s WHERE chat_id = %s
+            """, (numero, chat_id))
+        conn.commit()
+
 def guardar_log(chat_id, datos):
     """Guarda un log de interacción"""
     try:

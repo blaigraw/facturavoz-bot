@@ -331,5 +331,4 @@ def generar_factura_pdf(datos, numero_factura=None, info_autonomo=None, tipo="fa
     doc.build(elementos,
               onFirstPage=marca_agua,
               onLaterPages=marca_agua)
-    print(f"PDF generado: {nombre_archivo}")
     return nombre_archivo

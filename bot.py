@@ -1,7 +1,7 @@
 import os
 import json
 from datetime import datetime
-from config import config_existe, guardar_config, cargar_config, get_siguiente_numero_factura, get_siguiente_numero_presupuesto, init_db, guardar_log, guardar_consentimiento, tiene_consentimiento, guardar_iban, guardar_iva, eliminar_usuario, eliminar_logs, get_pruebas_realizadas, incrementar_prueba
+from config import config_existe, guardar_config, cargar_config, get_siguiente_numero_factura, get_siguiente_numero_presupuesto, init_db, guardar_log, guardar_consentimiento, tiene_consentimiento, guardar_iban, guardar_iva, eliminar_usuario, eliminar_logs, get_pruebas_realizadas, incrementar_prueba, guardar_numero_inicial_factura, guardar_numero_inicial_presupuesto
 from holded import crear_factura
 from factura_pdf import generar_factura_pdf
 from openai import OpenAI
@@ -42,6 +42,8 @@ ONBOARDING_REGISTRO = 15
 REGISTRO_CONFIRMANDO_CAMPO = 16
 REGISTRO_PRECIO_HORA = 17
 REGISTRO_ACTIVIDAD_OTRO = 18
+REGISTRO_NUMERO_FACTURA = 19
+REGISTRO_NUMERO_PRESUPUESTO = 20
 
 TECLADO_CONFIRMAR = InlineKeyboardMarkup([
     [
@@ -292,7 +294,9 @@ async def normalizar_por_gpt(texto_raw: str, campo: str) -> str:
         "telefono": "Devuelve solo los dígitos del teléfono español, sin espacios ni guiones. Solo el valor.",
         "email": "Devuelve el email en minúsculas, sin espacios. Solo el valor.",
         "precio_hora": "Devuelve solo el número (puede tener decimales con punto). Sin símbolo de euro ni texto. Solo el número.",
-        "actividad": "Devuelve la actividad profesional con inicial mayúscula. Máximo 3 palabras. Solo el valor."
+        "actividad": "Devuelve la actividad profesional con inicial mayúscula. Máximo 3 palabras. Solo el valor.",
+        "numero_factura": "Devuelve solo el número entero. Si dice 'cero' devuelve 0. Si dice 'cuarenta y siete' devuelve 47. Solo el número, sin texto.",
+        "numero_presupuesto": "Devuelve solo el número entero. Si dice 'cero' devuelve 0. Si dice 'doce' devuelve 12. Solo el número, sin texto."
     }
     instruccion = instrucciones.get(campo, "Devuelve el valor limpio y bien formateado. Solo el valor.")
     response = client.chat.completions.create(
@@ -435,30 +439,36 @@ async def handle_confirmacion_registro(update: Update, context: ContextTypes.DEF
     campo = context.user_data.get("campo_actual")
 
     FLUJO = {
-        "nombre":    (REGISTRO_NIF,        "¿Cuál es tu NIF o CIF?\n\nEjemplo: 12345678A"),
-        "nif":       (REGISTRO_DIRECCION,  "¿Cuál es tu dirección completa?\n\nEjemplo: Calle Mayor 1, 08001 Barcelona"),
-        "direccion": (REGISTRO_TELEFONO,   "¿Cuál es tu teléfono de contacto?"),
-        "telefono":  (REGISTRO_EMAIL,      "¿Cuál es tu email?"),
+        "nombre":         (REGISTRO_NIF,               "¿Cuál es tu NIF o CIF?\n\nEjemplo: 12345678A"),
+        "nif":            (REGISTRO_DIRECCION,          "¿Cuál es tu dirección completa?\n\nEjemplo: Calle Mayor 1, 08001 Barcelona"),
+        "direccion":      (REGISTRO_TELEFONO,           "¿Cuál es tu teléfono de contacto?"),
+        "telefono":       (REGISTRO_EMAIL,              "¿Cuál es tu email?"),
+        "actividad":      (REGISTRO_NUMERO_FACTURA,     "¿Por qué número de factura vas este año?\n\nEscribe el número de tu última factura. Si es la primera, escribe 0."),
+        "numero_factura": (REGISTRO_NUMERO_PRESUPUESTO, "¿Y por qué número de presupuesto vas este año?\n\nEscribe el número de tu último presupuesto. Si es el primero, escribe 0."),
     }
 
     if query.data == "reg_confirmar_corregir":
         ESTADO_CAMPO = {
-            "nombre": REGISTRO_NOMBRE,
-            "nif": REGISTRO_NIF,
-            "direccion": REGISTRO_DIRECCION,
-            "telefono": REGISTRO_TELEFONO,
-            "email": REGISTRO_EMAIL,
-            "precio_hora": REGISTRO_PRECIO_HORA,
-            "actividad": REGISTRO_ACTIVIDAD_OTRO,
+            "nombre":             REGISTRO_NOMBRE,
+            "nif":                REGISTRO_NIF,
+            "direccion":          REGISTRO_DIRECCION,
+            "telefono":           REGISTRO_TELEFONO,
+            "email":              REGISTRO_EMAIL,
+            "precio_hora":        REGISTRO_PRECIO_HORA,
+            "actividad":          REGISTRO_ACTIVIDAD_OTRO,
+            "numero_factura":     REGISTRO_NUMERO_FACTURA,
+            "numero_presupuesto": REGISTRO_NUMERO_PRESUPUESTO,
         }
         mensajes_repedir = {
-            "nombre": "Vale, dime tu nombre de nuevo:",
-            "nif": "Vale, dime tu NIF o CIF de nuevo:",
-            "direccion": "Vale, dime tu dirección de nuevo:",
-            "telefono": "Vale, dime tu teléfono de nuevo:",
-            "email": "Vale, dime tu email de nuevo:",
-            "precio_hora": "Vale, dime tu precio por hora de nuevo (solo el número):",
-            "actividad": "Vale, ¿cuál es tu actividad?",
+            "nombre":             "Vale, dime tu nombre de nuevo:",
+            "nif":                "Vale, dime tu NIF o CIF de nuevo:",
+            "direccion":          "Vale, dime tu dirección de nuevo:",
+            "telefono":           "Vale, dime tu teléfono de nuevo:",
+            "email":              "Vale, dime tu email de nuevo:",
+            "precio_hora":        "Vale, dime tu precio por hora de nuevo (solo el número):",
+            "actividad":          "Vale, ¿cuál es tu actividad?",
+            "numero_factura":     "Vale, ¿por qué número de factura vas este año?",
+            "numero_presupuesto": "Vale, ¿por qué número de presupuesto vas este año?",
         }
         await query.edit_message_text(mensajes_repedir.get(campo, "Dímelo de nuevo:"))
         return ESTADO_CAMPO.get(campo, REGISTRO_NOMBRE)
@@ -495,7 +505,7 @@ async def handle_confirmacion_registro(update: Update, context: ContextTypes.DEF
         )
         return REGISTRO_ACTIVIDAD
 
-    if campo == "actividad":
+    if campo == "numero_presupuesto":
         return await _guardar_registro_completo(query, context)
 
     siguiente_estado, mensaje = FLUJO[campo]
@@ -595,6 +605,50 @@ async def registro_actividad_otro(update: Update, context: ContextTypes.DEFAULT_
     return await mostrar_confirmacion_campo(update, context, "actividad", valor)
 
 
+async def registro_numero_factura(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Recibe el número de factura inicial — texto o audio"""
+    if update.message.voice:
+        texto_raw = await transcribir_audio_registro(update, context)
+    else:
+        texto_raw = update.message.text
+    valor = await normalizar_por_gpt(texto_raw, "numero_factura")
+    try:
+        numero = int(valor)
+        if numero < 0:
+            raise ValueError
+    except ValueError:
+        await update.message.reply_text(
+            "❌ Escribe solo el número. Por ejemplo: *0* si es tu primera factura, "
+            "o *47* si ya llevas 47 este año.",
+            parse_mode="Markdown"
+        )
+        return REGISTRO_NUMERO_FACTURA
+    context.user_data["reg_numero_factura"] = numero
+    return await mostrar_confirmacion_campo(update, context, "numero_factura", str(numero))
+
+
+async def registro_numero_presupuesto(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Recibe el número de presupuesto inicial — texto o audio"""
+    if update.message.voice:
+        texto_raw = await transcribir_audio_registro(update, context)
+    else:
+        texto_raw = update.message.text
+    valor = await normalizar_por_gpt(texto_raw, "numero_presupuesto")
+    try:
+        numero = int(valor)
+        if numero < 0:
+            raise ValueError
+    except ValueError:
+        await update.message.reply_text(
+            "❌ Escribe solo el número. Por ejemplo: *0* si es tu primer presupuesto, "
+            "o *12* si ya llevas 12 este año.",
+            parse_mode="Markdown"
+        )
+        return REGISTRO_NUMERO_PRESUPUESTO
+    context.user_data["reg_numero_presupuesto"] = numero
+    return await mostrar_confirmacion_campo(update, context, "numero_presupuesto", str(numero))
+
+
 async def _guardar_registro_completo(query, context):
     """Guarda todos los datos del registro en la BD y muestra el resumen final"""
     precio_hora_raw = context.user_data.get("reg_precio_hora")
@@ -615,6 +669,10 @@ async def _guardar_registro_completo(query, context):
     chat_id = query.message.chat_id
     guardar_config(chat_id, config)
     guardar_iva(chat_id, 0.21)
+    numero_factura_inicial = context.user_data.get("reg_numero_factura", 0)
+    numero_presupuesto_inicial = context.user_data.get("reg_numero_presupuesto", 0)
+    guardar_numero_inicial_factura(chat_id, numero_factura_inicial)
+    guardar_numero_inicial_presupuesto(chat_id, numero_presupuesto_inicial)
 
     precio_linea = (
         f"💰 *Precio/hora:* {precio_hora_raw} €\n"
@@ -630,7 +688,9 @@ async def _guardar_registro_completo(query, context):
         f"📞 *Teléfono:* {config['telefono']}\n"
         f"📧 *Email:* {config['email']}\n"
         f"🔧 *Actividad:* {config['actividad']}\n"
-        f"{precio_linea}\n"
+        f"{precio_linea}"
+        f"🧾 *Última factura:* {numero_factura_inicial}\n"
+        f"📋 *Último presupuesto:* {numero_presupuesto_inicial}\n\n"
         f"💡 Tu IVA está configurado al 21%. Puedes cambiarlo en /perfil.\n\n"
         f"Ya puedes empezar. Envíame una nota de voz describiendo el trabajo.",
         parse_mode="Markdown"
@@ -1409,7 +1469,9 @@ async def handle_perfil_callbacks(update: Update, context: ContextTypes.DEFAULT_
         "perfil_direccion": ("direccion", "📍 Dirección actual: {valor}\n\nEnvía la nueva dirección en audio o escrito."),
         "perfil_telefono": ("telefono", "📞 Teléfono actual: {valor}\n\nEnvía el nuevo teléfono en audio o escrito."),
         "perfil_email": ("email", "📧 Email actual: {valor}\n\nEnvía el nuevo email en audio o escrito."),
-        "perfil_iban": ("iban", "💳 IBAN actual: {valor}\n\nEnvía el nuevo IBAN en audio o escrito."),
+        "perfil_iban":               ("iban",               "💳 IBAN actual: {valor}\n\nEnvía el nuevo IBAN en audio o escrito."),
+        "perfil_numero_factura":     ("numero_factura",     "🧾 Última factura registrada: {valor}\n\nEscribe el número de tu última factura."),
+        "perfil_numero_presupuesto": ("numero_presupuesto", "📋 Último presupuesto registrado: {valor}\n\nEscribe el número de tu último presupuesto."),
     }
 
     if query.data in campos_perfil:
@@ -1425,6 +1487,19 @@ async def handle_perfil_callbacks(update: Update, context: ContextTypes.DEFAULT_
     elif query.data == "perfil_confirmar":
         campo = context.user_data.get("perfil_campo_editando")
         nuevo_valor = context.user_data.get("perfil_valor_pendiente")
+        if campo in ("numero_factura", "numero_presupuesto"):
+            try:
+                numero = int(nuevo_valor)
+            except ValueError:
+                await query.message.reply_text("❌ Escribe solo el número.")
+                return EDITANDO_PERFIL_CAMPO
+            if campo == "numero_factura":
+                guardar_numero_inicial_factura(chat_id, numero)
+            else:
+                guardar_numero_inicial_presupuesto(chat_id, numero)
+            await query.message.reply_text("✅ Guardado correctamente.")
+            await mostrar_perfil(query.message, chat_id)
+            return ESPERANDO_AUDIO
         config = cargar_config(chat_id)
         config[campo] = nuevo_valor
         guardar_config(chat_id, config)
@@ -1614,6 +1689,14 @@ conv_handler = ConversationHandler(
         REGISTRO_ACTIVIDAD_OTRO: [
             MessageHandler(filters.TEXT & ~filters.COMMAND, registro_actividad_otro),
             MessageHandler(filters.VOICE, registro_actividad_otro),
+        ],
+        REGISTRO_NUMERO_FACTURA: [
+            MessageHandler(filters.TEXT & ~filters.COMMAND, registro_numero_factura),
+            MessageHandler(filters.VOICE, registro_numero_factura),
+        ],
+        REGISTRO_NUMERO_PRESUPUESTO: [
+            MessageHandler(filters.TEXT & ~filters.COMMAND, registro_numero_presupuesto),
+            MessageHandler(filters.VOICE, registro_numero_presupuesto),
         ],
         ONBOARDING_PRUEBA: [
             CallbackQueryHandler(handle_onboarding_prueba, pattern="^onboarding_prueba$"),
