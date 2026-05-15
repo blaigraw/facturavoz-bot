@@ -906,6 +906,7 @@ async def generar_y_enviar_pdf(query, context):
             parse_mode="Markdown",
             reply_markup=teclado_post_prueba
         )
+        print(f"DEBUG estado post-prueba — devolviendo ONBOARDING_REGISTRO")
         return ONBOARDING_REGISTRO
     teclado_nuevo = InlineKeyboardMarkup([
         [
@@ -1230,6 +1231,7 @@ async def handle_perfil_audio(update: Update, context: ContextTypes.DEFAULT_TYPE
 
 async def handle_onboarding_prueba(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
+    print(f"DEBUG onboarding_prueba llamado — query.data: {query.data}")
     await query.answer()
     await query.edit_message_text(
         "🎙️ *Graba tu audio ahora*\n\n"
