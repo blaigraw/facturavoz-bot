@@ -488,7 +488,7 @@ async def handle_confirmacion(update: Update, context: ContextTypes.DEFAULT_TYPE
             context.user_data["pendiente_confirmar"] = True
             await query.message.reply_text(
                 f"💳 ¿Incluir IBAN en la factura?\n"
-                f"{'IBAN guardado: ' + config['iban'][:8] + '...' if config.get('iban') else 'No tienes IBAN configurado.'}",
+                f"{'IBAN guardado: ' + config['iban'][:8] + '...' if config and config.get('iban') else 'No tienes IBAN configurado.'}",
                 reply_markup=teclado_iban
             )
             return ESPERANDO_CONFIRMACION
@@ -501,7 +501,7 @@ async def handle_confirmacion(update: Update, context: ContextTypes.DEFAULT_TYPE
 
     elif query.data == "iban_si":
         config = cargar_config(query.message.chat_id)
-        if config.get("iban"):
+        if config and config.get("iban"):
             context.user_data["usar_iban"] = True
             return await generar_y_enviar_pdf(query, context)
         else:
@@ -565,7 +565,7 @@ async def handle_confirmacion(update: Update, context: ContextTypes.DEFAULT_TYPE
                 )
             else:
                 config = cargar_config(query.message.chat_id)
-                iva_porcentaje = config.get("iva", 0.21)
+                iva_porcentaje = config.get("iva", 0.21) if config else 0.21
                 await query.message.reply_text(
                     construir_resumen(datos, iva_porcentaje),
                     parse_mode="Markdown",
@@ -585,7 +585,7 @@ async def handle_confirmacion(update: Update, context: ContextTypes.DEFAULT_TYPE
         datos = context.user_data.get("datos_factura")
         if datos:
             config = cargar_config(query.message.chat_id)
-            iva_porcentaje = config.get("iva", 0.21)
+            iva_porcentaje = config.get("iva", 0.21) if config else 0.21
             await query.message.reply_text(
                 construir_resumen(datos, iva_porcentaje),
                 parse_mode="Markdown",
