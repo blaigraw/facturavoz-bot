@@ -1512,6 +1512,24 @@ async def handle_perfil_callbacks(update: Update, context: ContextTypes.DEFAULT_
         await mostrar_perfil(query.message, chat_id)
         return
 
+    elif query.data == "perfil_mostrar_precio":
+        config = cargar_config(chat_id)
+        estado_actual = config.get("mostrar_precio_hora", True)
+        teclado_mostrar = InlineKeyboardMarkup([
+            [
+                InlineKeyboardButton("✅ Sí, mostrarlo", callback_data="perfil_set_mostrar_si"),
+                InlineKeyboardButton("🔒 No, solo el total", callback_data="perfil_set_mostrar_no"),
+            ]
+        ])
+        await query.edit_message_text(
+            f"*¿Mostrar precio/hora en las facturas?*\n\n"
+            f"Ahora mismo está: {'✅ Sí' if estado_actual else '🔒 No'}\n\n"
+            f"Elige una opción:",
+            reply_markup=teclado_mostrar,
+            parse_mode="Markdown"
+        )
+        return ESPERANDO_CONFIRMACION
+
     # Campos de perfil — pide el nuevo valor
     campos_perfil = {
         "perfil_nombre": ("nombre", "👤 Nombre actual: {valor}\n\nEnvía el nuevo nombre en audio o escrito."),
@@ -1523,7 +1541,6 @@ async def handle_perfil_callbacks(update: Update, context: ContextTypes.DEFAULT_
         "perfil_numero_factura":     ("numero_factura",     "🧾 Última factura registrada: {valor}\n\nEscribe el número de tu última factura."),
         "perfil_numero_presupuesto": ("numero_presupuesto", "📋 Último presupuesto registrado: {valor}\n\nEscribe el número de tu último presupuesto."),
         "perfil_precio_hora":        ("precio_hora",        "💰 Precio/hora actual: {valor}\n\nEscribe el nuevo precio por hora (solo el número)."),
-        "perfil_mostrar_precio":     ("mostrar_precio_hora", "🔒 ¿Mostrar precio/hora en facturas?\n\nResponde 'si' o 'no'."),
     }
 
     if query.data in campos_perfil:
@@ -1599,6 +1616,17 @@ async def handle_perfil_callbacks(update: Update, context: ContextTypes.DEFAULT_
             f"en audio o escrito.\n\n/cancelar para salir."
         )
         return EDITANDO_PERFIL_CAMPO
+
+    elif query.data in ("perfil_set_mostrar_si", "perfil_set_mostrar_no"):
+        mostrar = query.data == "perfil_set_mostrar_si"
+        config = cargar_config(chat_id)
+        config["mostrar_precio_hora"] = mostrar
+        guardar_config(chat_id, config)
+        await query.edit_message_text(
+            f"✅ Guardado. {'Se mostrará el precio/hora en tus facturas.' if mostrar else 'Solo aparecerá el total de mano de obra.'}"
+        )
+        await mostrar_perfil(query.message, chat_id)
+        return ESPERANDO_AUDIO
 
 
 async def handle_perfil_texto(update: Update, context: ContextTypes.DEFAULT_TYPE):
