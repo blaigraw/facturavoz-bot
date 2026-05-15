@@ -39,6 +39,23 @@ CONFIRMANDO_PERFIL_CAMPO = 12
 REGISTRO_ACTIVIDAD = 13
 ONBOARDING_PRUEBA = 14
 ONBOARDING_REGISTRO = 15
+REGISTRO_CONFIRMANDO_CAMPO = 16
+REGISTRO_PRECIO_HORA = 17
+REGISTRO_ACTIVIDAD_OTRO = 18
+
+TECLADO_CONFIRMAR = InlineKeyboardMarkup([
+    [
+        InlineKeyboardButton("✅ Correcto", callback_data="reg_confirmar_si"),
+        InlineKeyboardButton("✏️ Corregir", callback_data="reg_confirmar_corregir"),
+    ]
+])
+
+TECLADO_PRECIO_HORA = InlineKeyboardMarkup([
+    [
+        InlineKeyboardButton("✅ Sí, añadir precio/hora", callback_data="reg_precio_si"),
+        InlineKeyboardButton("➡️ Saltar por ahora", callback_data="reg_precio_no"),
+    ]
+])
 
 def get_prompt_sistema():
     hoy = datetime.now().strftime("%d/%m/%Y")
@@ -252,38 +269,245 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await asyncio.sleep(0.3)
     return ONBOARDING_PRUEBA
 
-async def registro_nombre(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Recibe el nombre del autónomo"""
-    context.user_data["reg_nombre"] = update.message.text
-    await update.message.reply_text(
-        f"✅ Perfecto, {update.message.text}.\n\n"
-        "¿Cuál es tu NIF o CIF?"
+async def transcribir_audio_registro(update, context):
+    """Transcribe un audio de voz en el flujo de registro"""
+    file = await context.bot.get_file(update.message.voice.file_id)
+    audio_path = "audio_registro.ogg"
+    await file.download_to_drive(audio_path)
+    with open(audio_path, "rb") as audio_file:
+        transcription = client.audio.transcriptions.create(
+            model="whisper-1",
+            file=audio_file,
+            language="es"
+        )
+    return transcription.text
+
+
+async def normalizar_por_gpt(texto_raw: str, campo: str) -> str:
+    """Normaliza un valor de registro usando GPT según el campo"""
+    instrucciones = {
+        "nombre": "Devuelve el nombre propio con las iniciales en mayúscula y el resto en minúscula. Solo el nombre, sin explicaciones.",
+        "nif": "Devuelve el NIF o CIF en mayúsculas, sin espacios ni guiones. Solo el valor, sin explicaciones.",
+        "direccion": "Normaliza esta dirección española: tipo de vía con inicial mayúscula, nombre de la calle con iniciales en mayúscula, número, código postal (5 dígitos), ciudad en mayúsculas. Formato: 'Calle Mayor 12, 08001 BARCELONA'. Solo la dirección, sin explicaciones.",
+        "telefono": "Devuelve solo los dígitos del teléfono español, sin espacios ni guiones. Solo el valor.",
+        "email": "Devuelve el email en minúsculas, sin espacios. Solo el valor.",
+        "precio_hora": "Devuelve solo el número (puede tener decimales con punto). Sin símbolo de euro ni texto. Solo el número.",
+        "actividad": "Devuelve la actividad profesional con inicial mayúscula. Máximo 3 palabras. Solo el valor."
+    }
+    instruccion = instrucciones.get(campo, "Devuelve el valor limpio y bien formateado. Solo el valor.")
+    response = client.chat.completions.create(
+        model="gpt-4o-mini",
+        messages=[
+            {"role": "system", "content": instruccion},
+            {"role": "user", "content": texto_raw}
+        ],
+        max_tokens=100,
+        temperature=0
     )
-    return REGISTRO_NIF
+    return response.choices[0].message.content.strip()
+
+
+def validar_nif(nif: str) -> bool:
+    """Valida NIF español (8 dígitos + letra) o CIF (letra + 7 dígitos + dígito/letra)"""
+    import re
+    nif = nif.upper().strip()
+    if re.match(r'^[XYZ]\d{7}[A-Z]$', nif):
+        return True
+    if re.match(r'^\d{8}[A-Z]$', nif):
+        letras = "TRWAGMYFPDXBNJZSQVHLCKE"
+        return nif[-1] == letras[int(nif[:8]) % 23]
+    if re.match(r'^[ABCDEFGHJKLMNPQRSUVW]\d{7}[A-Z0-9]$', nif):
+        return True
+    return False
+
+def validar_email(email: str) -> bool:
+    """Validación básica de email"""
+    import re
+    return bool(re.match(r'^[^@]+@[^@]+\.[^@]+$', email.strip()))
+
+def validar_cp_en_direccion(direccion: str) -> bool:
+    """Comprueba que la dirección contiene un CP de 5 dígitos"""
+    import re
+    return bool(re.search(r'\b\d{5}\b', direccion))
+
+
+async def mostrar_confirmacion_campo(update, context, campo: str, valor: str, siguiente_msg: str = None):
+    """Muestra el valor capturado y pide confirmación"""
+    etiquetas = {
+        "nombre": "Nombre",
+        "nif": "NIF/CIF",
+        "direccion": "Dirección",
+        "telefono": "Teléfono",
+        "email": "Email",
+        "precio_hora": "Precio por hora",
+        "actividad": "Actividad"
+    }
+    etiqueta = etiquetas.get(campo, campo.capitalize())
+    context.user_data["campo_actual"] = campo
+    context.user_data[f"reg_{campo}"] = valor
+    await update.message.reply_text(
+        f"*{etiqueta}:* {valor}\n\n¿Es correcto?",
+        reply_markup=TECLADO_CONFIRMAR,
+        parse_mode="Markdown"
+    )
+    return REGISTRO_CONFIRMANDO_CAMPO
+
+
+async def registro_nombre(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Recibe el nombre — admite texto o audio"""
+    if update.message.voice:
+        texto_raw = await transcribir_audio_registro(update, context)
+    else:
+        texto_raw = update.message.text
+    valor = await normalizar_por_gpt(texto_raw, "nombre")
+    return await mostrar_confirmacion_campo(update, context, "nombre", valor)
+
 
 async def registro_nif(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Recibe el NIF del autónomo"""
-    context.user_data["reg_nif"] = update.message.text.upper()
-    await update.message.reply_text(
-        "¿Cuál es tu dirección completa?\n"
-        "Ejemplo: Calle Mayor 1, 08001 Barcelona"
-    )
-    return REGISTRO_DIRECCION
+    """Recibe el NIF — admite texto o audio, valida formato"""
+    if update.message.voice:
+        texto_raw = await transcribir_audio_registro(update, context)
+    else:
+        texto_raw = update.message.text
+    valor = await normalizar_por_gpt(texto_raw, "nif")
+    if not validar_nif(valor):
+        await update.message.reply_text(
+            "❌ Ese NIF o CIF no parece válido.\n\n"
+            "El formato correcto es 8 números y una letra, por ejemplo: *12345678A*\n\n"
+            "Inténtalo de nuevo:",
+            parse_mode="Markdown"
+        )
+        return REGISTRO_NIF
+    return await mostrar_confirmacion_campo(update, context, "nif", valor)
+
 
 async def registro_direccion(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Recibe la dirección del autónomo"""
-    context.user_data["reg_direccion"] = update.message.text
-    await update.message.reply_text("¿Cuál es tu teléfono de contacto?")
-    return REGISTRO_TELEFONO
+    """Recibe la dirección — normaliza siempre por GPT"""
+    if update.message.voice:
+        texto_raw = await transcribir_audio_registro(update, context)
+    else:
+        texto_raw = update.message.text
+    valor = await normalizar_por_gpt(texto_raw, "direccion")
+    if not validar_cp_en_direccion(valor):
+        await update.message.reply_text(
+            "❌ No encuentro el código postal en esa dirección.\n\n"
+            "Incluye el código postal de 5 dígitos, por ejemplo:\n"
+            "*Calle Mayor 12, 08001 Barcelona*\n\n"
+            "Inténtalo de nuevo:",
+            parse_mode="Markdown"
+        )
+        return REGISTRO_DIRECCION
+    return await mostrar_confirmacion_campo(update, context, "direccion", valor)
+
 
 async def registro_telefono(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Recibe el teléfono del autónomo"""
-    context.user_data["reg_telefono"] = update.message.text
-    await update.message.reply_text("¿Cuál es tu email?")
-    return REGISTRO_EMAIL
+    """Recibe el teléfono — admite texto o audio"""
+    if update.message.voice:
+        texto_raw = await transcribir_audio_registro(update, context)
+    else:
+        texto_raw = update.message.text
+    valor = await normalizar_por_gpt(texto_raw, "telefono")
+    return await mostrar_confirmacion_campo(update, context, "telefono", valor)
+
 
 async def registro_email(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Recibe el email y pregunta la actividad"""
+    """Recibe el email — admite texto o audio, valida formato"""
+    if update.message.voice:
+        texto_raw = await transcribir_audio_registro(update, context)
+    else:
+        texto_raw = update.message.text
+    valor = await normalizar_por_gpt(texto_raw, "email")
+    if not validar_email(valor):
+        await update.message.reply_text(
+            "❌ Ese email no parece correcto.\n\n"
+            "Comprueba que tiene el formato *usuario@dominio.com*\n\n"
+            "Inténtalo de nuevo:",
+            parse_mode="Markdown"
+        )
+        return REGISTRO_EMAIL
+    return await mostrar_confirmacion_campo(update, context, "email", valor)
+
+
+async def handle_confirmacion_registro(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Gestiona los botones ✅ Correcto / ✏️ Corregir del flujo de registro"""
+    query = update.callback_query
+    await query.answer()
+    campo = context.user_data.get("campo_actual")
+
+    FLUJO = {
+        "nombre":    (REGISTRO_NIF,        "¿Cuál es tu NIF o CIF?\n\nEjemplo: 12345678A"),
+        "nif":       (REGISTRO_DIRECCION,  "¿Cuál es tu dirección completa?\n\nEjemplo: Calle Mayor 1, 08001 Barcelona"),
+        "direccion": (REGISTRO_TELEFONO,   "¿Cuál es tu teléfono de contacto?"),
+        "telefono":  (REGISTRO_EMAIL,      "¿Cuál es tu email?"),
+    }
+
+    if query.data == "reg_confirmar_corregir":
+        ESTADO_CAMPO = {
+            "nombre": REGISTRO_NOMBRE,
+            "nif": REGISTRO_NIF,
+            "direccion": REGISTRO_DIRECCION,
+            "telefono": REGISTRO_TELEFONO,
+            "email": REGISTRO_EMAIL,
+            "precio_hora": REGISTRO_PRECIO_HORA,
+            "actividad": REGISTRO_ACTIVIDAD_OTRO,
+        }
+        mensajes_repedir = {
+            "nombre": "Vale, dime tu nombre de nuevo:",
+            "nif": "Vale, dime tu NIF o CIF de nuevo:",
+            "direccion": "Vale, dime tu dirección de nuevo:",
+            "telefono": "Vale, dime tu teléfono de nuevo:",
+            "email": "Vale, dime tu email de nuevo:",
+            "precio_hora": "Vale, dime tu precio por hora de nuevo (solo el número):",
+            "actividad": "Vale, ¿cuál es tu actividad?",
+        }
+        await query.edit_message_text(mensajes_repedir.get(campo, "Dímelo de nuevo:"))
+        return ESTADO_CAMPO.get(campo, REGISTRO_NOMBRE)
+
+    # reg_confirmar_si — avanzar al siguiente campo
+    if campo == "email":
+        await query.edit_message_text(
+            "💰 *¿Tienes un precio por hora habitual?*\n\n"
+            "Si lo guardas aquí, el bot lo usará por defecto en tus facturas. "
+            "Puedes cambiarlo en cualquier momento desde /perfil.",
+            reply_markup=TECLADO_PRECIO_HORA,
+            parse_mode="Markdown"
+        )
+        return REGISTRO_PRECIO_HORA
+
+    if campo == "precio_hora":
+        teclado_actividad = InlineKeyboardMarkup([
+            [
+                InlineKeyboardButton("🔧 Fontanero", callback_data="act_fontanero"),
+                InlineKeyboardButton("⚡ Electricista", callback_data="act_electricista"),
+            ],
+            [
+                InlineKeyboardButton("🏗️ Reformas", callback_data="act_reformas"),
+                InlineKeyboardButton("🎨 Pintor", callback_data="act_pintor"),
+            ],
+            [
+                InlineKeyboardButton("🪚 Carpintero", callback_data="act_carpintero"),
+                InlineKeyboardButton("❓ Otro", callback_data="act_otro"),
+            ]
+        ])
+        await query.edit_message_text(
+            "¿Cuál es tu actividad principal?",
+            reply_markup=teclado_actividad
+        )
+        return REGISTRO_ACTIVIDAD
+
+    if campo == "actividad":
+        return await _guardar_registro_completo(query, context)
+
+    siguiente_estado, mensaje = FLUJO[campo]
+    await query.edit_message_text(mensaje)
+    return siguiente_estado
+
+
+async def handle_precio_hora_registro(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Gestiona los botones de precio/hora"""
+    query = update.callback_query
+    await query.answer()
+
     teclado_actividad = InlineKeyboardMarkup([
         [
             InlineKeyboardButton("🔧 Fontanero", callback_data="act_fontanero"),
@@ -298,16 +522,42 @@ async def registro_email(update: Update, context: ContextTypes.DEFAULT_TYPE):
             InlineKeyboardButton("❓ Otro", callback_data="act_otro"),
         ]
     ])
-    context.user_data["reg_email"] = update.message.text
-    await update.message.reply_text(
-        "¿Cuál es tu actividad principal?",
-        reply_markup=teclado_actividad
-    )
-    return REGISTRO_ACTIVIDAD
+
+    if query.data == "reg_precio_no":
+        context.user_data["reg_precio_hora"] = None
+        await query.edit_message_text(
+            "¿Cuál es tu actividad principal?",
+            reply_markup=teclado_actividad
+        )
+        return REGISTRO_ACTIVIDAD
+
+    if query.data == "reg_precio_si":
+        await query.edit_message_text(
+            "¿Cuánto cobras por hora? (solo el número, en euros)\n\nEjemplo: 35"
+        )
+        return REGISTRO_PRECIO_HORA
+
+
+async def registro_precio_hora(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Recibe el precio/hora como texto o audio"""
+    if update.message.voice:
+        texto_raw = await transcribir_audio_registro(update, context)
+    else:
+        texto_raw = update.message.text
+    valor = await normalizar_por_gpt(texto_raw, "precio_hora")
+    try:
+        float(valor)
+    except ValueError:
+        await update.message.reply_text(
+            "❌ No entendí el precio. Escribe solo el número, por ejemplo: *35* o *42.50*",
+            parse_mode="Markdown"
+        )
+        return REGISTRO_PRECIO_HORA
+    return await mostrar_confirmacion_campo(update, context, "precio_hora", f"{valor} €/hora")
 
 
 async def handle_actividad(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Recibe la actividad del autónomo y completa el registro"""
+    """Recibe la actividad del desplegable"""
     query = update.callback_query
     await query.answer()
     actividades = {
@@ -316,20 +566,62 @@ async def handle_actividad(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "act_reformas": "Reformas",
         "act_pintor": "Pintor",
         "act_carpintero": "Carpintero",
-        "act_otro": "Otro"
     }
+    if query.data == "act_otro":
+        await query.edit_message_text(
+            "¿Cuál es tu actividad? Escríbela o manda un audio:"
+        )
+        return REGISTRO_ACTIVIDAD_OTRO
+
     actividad = actividades.get(query.data, "Otro")
+    context.user_data["reg_actividad"] = actividad
+    context.user_data["campo_actual"] = "actividad"
+    await query.edit_message_text(
+        f"*Actividad:* {actividad}\n\n¿Es correcto?",
+        reply_markup=TECLADO_CONFIRMAR,
+        parse_mode="Markdown"
+    )
+    return REGISTRO_CONFIRMANDO_CAMPO
+
+
+async def registro_actividad_otro(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Recibe actividad libre (texto o audio) cuando pulsó Otro"""
+    if update.message.voice:
+        texto_raw = await transcribir_audio_registro(update, context)
+    else:
+        texto_raw = update.message.text
+    valor = await normalizar_por_gpt(texto_raw, "actividad")
+    context.user_data["reg_actividad"] = valor
+    return await mostrar_confirmacion_campo(update, context, "actividad", valor)
+
+
+async def _guardar_registro_completo(query, context):
+    """Guarda todos los datos del registro en la BD y muestra el resumen final"""
+    precio_hora_raw = context.user_data.get("reg_precio_hora")
+    if precio_hora_raw and "€" in str(precio_hora_raw):
+        precio_hora_raw = precio_hora_raw.replace("€/hora", "").strip()
+
     config = {
         "nombre": context.user_data["reg_nombre"],
         "nif": context.user_data["reg_nif"],
         "direccion": context.user_data["reg_direccion"],
         "telefono": context.user_data["reg_telefono"],
         "email": context.user_data["reg_email"],
-        "actividad": actividad
+        "actividad": context.user_data["reg_actividad"],
     }
+    if precio_hora_raw:
+        config["precio_hora"] = float(precio_hora_raw)
+
     chat_id = query.message.chat_id
     guardar_config(chat_id, config)
     guardar_iva(chat_id, 0.21)
+
+    precio_linea = (
+        f"💰 *Precio/hora:* {precio_hora_raw} €\n"
+        if precio_hora_raw
+        else ""
+    )
+
     await query.edit_message_text(
         f"✅ *Registro completado.*\n\n"
         f"👤 *Nombre:* {config['nombre']}\n"
@@ -337,11 +629,10 @@ async def handle_actividad(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"📍 *Dirección:* {config['direccion']}\n"
         f"📞 *Teléfono:* {config['telefono']}\n"
         f"📧 *Email:* {config['email']}\n"
-        f"🔧 *Actividad:* {actividad}\n\n"
-        f"💡 Tu IVA habitual está configurado al 21%. "
-        f"Puedes cambiarlo en /perfil.\n\n"
-        f"Ya puedes empezar. Envíame una nota de voz "
-        f"describiendo el trabajo.",
+        f"🔧 *Actividad:* {config['actividad']}\n"
+        f"{precio_linea}\n"
+        f"💡 Tu IVA está configurado al 21%. Puedes cambiarlo en /perfil.\n\n"
+        f"Ya puedes empezar. Envíame una nota de voz describiendo el trabajo.",
         parse_mode="Markdown"
     )
     return ESPERANDO_AUDIO
@@ -1264,7 +1555,9 @@ async def handle_onboarding_registro(update: Update, context: ContextTypes.DEFAU
     query = update.callback_query
     await query.answer()
     await query.edit_message_text(
-        "¿Cuál es tu nombre completo o razón social?"
+        "Vamos a configurar tu perfil. Tarda menos de un minuto.\n\n"
+        "A cada pregunta puedes responder escribiendo o mandando un audio — como quieras.\n\n"
+        "¿Cuál es tu nombre completo?"
     )
     return REGISTRO_NOMBRE
 
@@ -1288,22 +1581,39 @@ conv_handler = ConversationHandler(
     ],
     states={
         REGISTRO_NOMBRE: [
-            MessageHandler(filters.TEXT & ~filters.COMMAND, registro_nombre)
+            MessageHandler(filters.TEXT & ~filters.COMMAND, registro_nombre),
+            MessageHandler(filters.VOICE, registro_nombre),
         ],
         REGISTRO_NIF: [
-            MessageHandler(filters.TEXT & ~filters.COMMAND, registro_nif)
+            MessageHandler(filters.TEXT & ~filters.COMMAND, registro_nif),
+            MessageHandler(filters.VOICE, registro_nif),
         ],
         REGISTRO_DIRECCION: [
-            MessageHandler(filters.TEXT & ~filters.COMMAND, registro_direccion)
+            MessageHandler(filters.TEXT & ~filters.COMMAND, registro_direccion),
+            MessageHandler(filters.VOICE, registro_direccion),
         ],
         REGISTRO_TELEFONO: [
-            MessageHandler(filters.TEXT & ~filters.COMMAND, registro_telefono)
+            MessageHandler(filters.TEXT & ~filters.COMMAND, registro_telefono),
+            MessageHandler(filters.VOICE, registro_telefono),
         ],
         REGISTRO_EMAIL: [
-            MessageHandler(filters.TEXT & ~filters.COMMAND, registro_email)
+            MessageHandler(filters.TEXT & ~filters.COMMAND, registro_email),
+            MessageHandler(filters.VOICE, registro_email),
         ],
         REGISTRO_ACTIVIDAD: [
-            CallbackQueryHandler(handle_actividad, pattern="^act_")
+            CallbackQueryHandler(handle_actividad, pattern="^act_"),
+        ],
+        REGISTRO_CONFIRMANDO_CAMPO: [
+            CallbackQueryHandler(handle_confirmacion_registro, pattern="^reg_confirmar_"),
+        ],
+        REGISTRO_PRECIO_HORA: [
+            CallbackQueryHandler(handle_precio_hora_registro, pattern="^reg_precio_"),
+            MessageHandler(filters.TEXT & ~filters.COMMAND, registro_precio_hora),
+            MessageHandler(filters.VOICE, registro_precio_hora),
+        ],
+        REGISTRO_ACTIVIDAD_OTRO: [
+            MessageHandler(filters.TEXT & ~filters.COMMAND, registro_actividad_otro),
+            MessageHandler(filters.VOICE, registro_actividad_otro),
         ],
         ONBOARDING_PRUEBA: [
             CallbackQueryHandler(handle_onboarding_prueba, pattern="^onboarding_prueba$"),
