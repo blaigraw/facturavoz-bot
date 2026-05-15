@@ -1,7 +1,7 @@
 import os
 import json
 from datetime import datetime
-from config import config_existe, guardar_config, cargar_config, get_siguiente_numero_factura, get_siguiente_numero_presupuesto, init_db, guardar_log, guardar_consentimiento, tiene_consentimiento
+from config import config_existe, guardar_config, cargar_config, get_siguiente_numero_factura, get_siguiente_numero_presupuesto, init_db, guardar_log, guardar_consentimiento, tiene_consentimiento, guardar_iban
 from holded import crear_factura
 from factura_pdf import generar_factura_pdf
 from openai import OpenAI
@@ -32,6 +32,7 @@ REGISTRO_DIRECCION = 5
 REGISTRO_TELEFONO = 6
 REGISTRO_EMAIL = 7
 ESPERANDO_CONSENTIMIENTO = 8
+ESPERANDO_IBAN = 9
 
 def get_prompt_sistema():
     """Genera el prompt con la fecha de hoy actualizada"""
@@ -413,55 +414,44 @@ async def handle_confirmacion(update: Update, context: ContextTypes.DEFAULT_TYPE
         tipo = datos.get("tipo", "factura")
         es_presupuesto = tipo == "presupuesto"
 
-        await query.message.reply_text(
-            "⏳ Generando presupuesto PDF..." if es_presupuesto else "⏳ Generando factura PDF..."
-        )
-
-        chat_id = query.message.chat_id
-        numero = get_siguiente_numero_presupuesto(chat_id) if es_presupuesto else get_siguiente_numero_factura(chat_id)
-        nombre_pdf = generar_factura_pdf(
-            datos,
-            numero_factura=numero,
-            info_autonomo=cargar_config(chat_id),
-            tipo=tipo
-)
-
-        prefijo = "presupuesto" if es_presupuesto else "factura"
-        emoji = "📋" if es_presupuesto else "🎉"
-        chat_id = query.message.chat_id
-        segundos = int(datetime.now().timestamp() - context.user_data.get("tiempo_inicio", datetime.now().timestamp()))
-        guardar_log(chat_id, {
-            "transcripcion": context.user_data.get("transcripcion"),
-            "tipo_detectado": context.user_data.get("tipo_detectado"),
-            "json_estructurado": datos,
-            "tipo_final": tipo,
-            "campos_editados": context.user_data.get("campos_editados", []),
-            "numero_ediciones": context.user_data.get("numero_ediciones", 0),
-            "numero_documento": numero,
-            "total_factura": datos.get("total"),
-            "concepto": datos.get("concepto"),
-            "accion_final": "confirmado",
-            "segundos_hasta_confirmacion": segundos
-        })
-        with open(nombre_pdf, "rb") as pdf:
-            await query.message.reply_document(
-                document=pdf,
-                filename=f"{prefijo}_{numero}.pdf",
-                caption=f"{emoji} {prefijo.capitalize()} *{numero}* generada correctamente.",
-                parse_mode="Markdown"
+        # Solo en facturas, preguntar si quieren incluir IBAN
+        if tipo == "factura":
+            config = cargar_config(query.message.chat_id)
+            teclado_iban = InlineKeyboardMarkup([
+                [
+                    InlineKeyboardButton("💳 Con IBAN", callback_data="iban_si"),
+                    InlineKeyboardButton("⏭️ Sin IBAN", callback_data="iban_no")
+                ]
+            ])
+            context.user_data["pendiente_confirmar"] = True
+            await query.message.reply_text(
+                f"💳 ¿Incluir IBAN en la factura?\n"
+                f"{'IBAN guardado: ' + config['iban'][:8] + '...' if config.get('iban') else 'No tienes IBAN configurado.'}",
+                reply_markup=teclado_iban
             )
+            return ESPERANDO_CONFIRMACION
 
-        teclado_nuevo = InlineKeyboardMarkup([
-            [
-                InlineKeyboardButton("➕ Nueva factura", callback_data="nueva_factura"),
-                InlineKeyboardButton("📋 Nuevo presupuesto", callback_data="nueva_factura")
-            ]
-        ])
-        await query.message.reply_text(
-            "¿Quieres crear otro documento?",
-            reply_markup=teclado_nuevo
-        )
+        # Los presupuestos se generan directamente
+        await generar_y_enviar_pdf(query, context)
         return ESPERANDO_CONFIRMACION
+    elif query.data == "iban_no":
+        context.user_data["usar_iban"] = False
+        await generar_y_enviar_pdf(query, context)
+        return ESPERANDO_CONFIRMACION
+
+    elif query.data == "iban_si":
+        config = cargar_config(query.message.chat_id)
+        if config.get("iban"):
+            context.user_data["usar_iban"] = True
+            await generar_y_enviar_pdf(query, context)
+            return ESPERANDO_CONFIRMACION
+        else:
+            await query.message.reply_text(
+                "💳 Escribe tu IBAN:\n"
+                "Ejemplo: ES91 2100 0418 4200 0512 3456"
+            )
+            return ESPERANDO_IBAN
+
     elif query.data == "editar":
         await query.message.reply_text(
             "✏️ *¿Qué campo quieres corregir?*",
@@ -656,6 +646,101 @@ async def handle_voice_campo(update: Update, context: ContextTypes.DEFAULT_TYPE)
     return ESPERANDO_CONFIRMACION
 
 
+async def generar_y_enviar_pdf(query, context):
+    """Genera el PDF y lo envía — llamado desde callback query"""
+    datos = context.user_data.get("datos_factura")
+    tipo = datos.get("tipo", "factura")
+    es_presupuesto = tipo == "presupuesto"
+    chat_id = query.message.chat_id
+    config = cargar_config(chat_id)
+
+    if context.user_data.get("usar_iban") and config.get("iban"):
+        config["mostrar_iban"] = True
+    else:
+        config["mostrar_iban"] = False
+
+    await query.message.reply_text(
+        "⏳ Generando presupuesto PDF..." if es_presupuesto else "⏳ Generando factura PDF..."
+    )
+    numero = get_siguiente_numero_presupuesto(chat_id) if es_presupuesto else get_siguiente_numero_factura(chat_id)
+    nombre_pdf = generar_factura_pdf(datos, numero_factura=numero, info_autonomo=config, tipo=tipo)
+    prefijo = "presupuesto" if es_presupuesto else "factura"
+    emoji = "📋" if es_presupuesto else "🎉"
+    segundos = int(datetime.now().timestamp() - context.user_data.get("tiempo_inicio", datetime.now().timestamp()))
+    guardar_log(chat_id, {
+        "transcripcion": context.user_data.get("transcripcion"),
+        "tipo_detectado": context.user_data.get("tipo_detectado"),
+        "json_estructurado": datos,
+        "tipo_final": tipo,
+        "campos_editados": context.user_data.get("campos_editados", []),
+        "numero_ediciones": context.user_data.get("numero_ediciones", 0),
+        "numero_documento": numero,
+        "total_factura": datos.get("total"),
+        "concepto": datos.get("concepto"),
+        "accion_final": "confirmado",
+        "segundos_hasta_confirmacion": segundos
+    })
+    with open(nombre_pdf, "rb") as pdf:
+        await query.message.reply_document(
+            document=pdf,
+            filename=f"{prefijo}_{numero}.pdf",
+            caption=f"{emoji} {prefijo.capitalize()} *{numero}* generada correctamente.",
+            parse_mode="Markdown"
+        )
+    teclado_nuevo = InlineKeyboardMarkup([
+        [
+            InlineKeyboardButton("➕ Nueva factura", callback_data="nueva_factura"),
+            InlineKeyboardButton("📋 Nuevo presupuesto", callback_data="nueva_factura")
+        ]
+    ])
+    await query.message.reply_text("¿Quieres crear otro documento?", reply_markup=teclado_nuevo)
+
+
+async def generar_y_enviar_pdf_texto(update, context):
+    """Genera el PDF y lo envía — llamado desde mensaje de texto"""
+    datos = context.user_data.get("datos_factura")
+    tipo = datos.get("tipo", "factura")
+    es_presupuesto = tipo == "presupuesto"
+    chat_id = update.effective_chat.id
+    config = cargar_config(chat_id)
+    if context.user_data.get("usar_iban") and config.get("iban"):
+        config["mostrar_iban"] = True
+    else:
+        config["mostrar_iban"] = False
+    await update.message.reply_text(
+        "⏳ Generando presupuesto PDF..." if es_presupuesto else "⏳ Generando factura PDF..."
+    )
+    numero = get_siguiente_numero_presupuesto(chat_id) if es_presupuesto else get_siguiente_numero_factura(chat_id)
+    nombre_pdf = generar_factura_pdf(datos, numero_factura=numero, info_autonomo=config, tipo=tipo)
+    prefijo = "presupuesto" if es_presupuesto else "factura"
+    emoji = "📋" if es_presupuesto else "🎉"
+    with open(nombre_pdf, "rb") as pdf:
+        await update.message.reply_document(
+            document=pdf,
+            filename=f"{prefijo}_{numero}.pdf",
+            caption=f"{emoji} {prefijo.capitalize()} *{numero}* generada correctamente.",
+            parse_mode="Markdown"
+        )
+    teclado_nuevo = InlineKeyboardMarkup([
+        [
+            InlineKeyboardButton("➕ Nueva factura", callback_data="nueva_factura"),
+            InlineKeyboardButton("📋 Nuevo presupuesto", callback_data="nueva_factura")
+        ]
+    ])
+    await update.message.reply_text("¿Quieres crear otro documento?", reply_markup=teclado_nuevo)
+
+
+async def handle_iban(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Recibe el IBAN, lo guarda y genera la factura"""
+    iban = update.message.text.strip().upper()
+    chat_id = update.effective_chat.id
+    guardar_iban(chat_id, iban)
+    context.user_data["usar_iban"] = True
+    await update.message.reply_text("✅ IBAN guardado correctamente.")
+    await generar_y_enviar_pdf_texto(update, context)
+    return ESPERANDO_CONFIRMACION
+
+
 async def cancelar(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Comando /cancelar — sale del flujo en cualquier momento"""
     await update.message.reply_text(
@@ -674,6 +759,52 @@ async def privacidad(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "Para más información sobre el RGPD visita: https://www.aepd.es",
         parse_mode="Markdown"
     )
+async def cmd_perfil(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Muestra el perfil del autónomo con opciones de edición"""
+    chat_id = update.effective_chat.id
+    config = cargar_config(chat_id)
+    if not config:
+        await update.message.reply_text("No tienes perfil configurado. Usa /start para registrarte.")
+        return
+    iban_texto = config.get("iban") or "No configurado"
+    if config.get("iban") and len(config["iban"]) > 8:
+        iban_texto = config["iban"][:8] + "..."
+    texto = (
+        f"👤 *Tu perfil:*\n\n"
+        f"*Nombre:* {config['nombre']}\n"
+        f"*NIF:* {config['nif']}\n"
+        f"*Dirección:* {config['direccion']}\n"
+        f"*Teléfono:* {config['telefono']}\n"
+        f"*Email:* {config['email']}\n"
+        f"*IBAN:* {iban_texto}\n\n"
+        f"Pulsa un campo para editarlo:"
+    )
+    teclado = InlineKeyboardMarkup([
+        [
+            InlineKeyboardButton("👤 Nombre", callback_data="perfil_nombre"),
+            InlineKeyboardButton("🪪 NIF", callback_data="perfil_nif"),
+        ],
+        [
+            InlineKeyboardButton("📍 Dirección", callback_data="perfil_direccion"),
+            InlineKeyboardButton("📞 Teléfono", callback_data="perfil_telefono"),
+        ],
+        [
+            InlineKeyboardButton("📧 Email", callback_data="perfil_email"),
+            InlineKeyboardButton("💳 IBAN", callback_data="perfil_iban"),
+        ]
+    ])
+    await update.message.reply_text(texto, parse_mode="Markdown", reply_markup=teclado)
+
+
+async def post_init(application):
+    await application.bot.set_my_commands([
+        ("start", "Iniciar o reiniciar el bot"),
+        ("cancelar", "Cancelar la operación actual"),
+        ("perfil", "Ver y editar tus datos"),
+        ("privacidad", "Política de privacidad"),
+    ])
+
+
 # ConversationHandler — gestiona el estado de cada usuario
 conv_handler = ConversationHandler(
     entry_points=[
@@ -710,6 +841,9 @@ conv_handler = ConversationHandler(
         ESPERANDO_CONSENTIMIENTO: [
             CallbackQueryHandler(handle_consentimiento)
         ],
+        ESPERANDO_IBAN: [
+            MessageHandler(filters.TEXT & ~filters.COMMAND, handle_iban),
+        ],
     },
     fallbacks=[
     CommandHandler("cancelar", cancelar),
@@ -719,10 +853,11 @@ conv_handler = ConversationHandler(
 )
 
 # Construye y arranca el bot
-app = ApplicationBuilder().token(TELEGRAM_TOKEN).build()
+app = ApplicationBuilder().token(TELEGRAM_TOKEN).post_init(post_init).build()
 app.add_handler(conv_handler)
 
 init_db()
 print("Bot activo...")
 app.add_handler(CommandHandler("privacidad", privacidad))
+app.add_handler(CommandHandler("perfil", cmd_perfil))
 app.run_polling()

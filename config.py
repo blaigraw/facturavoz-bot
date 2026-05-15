@@ -27,9 +27,13 @@ def init_db():
                 )
             """)
             cur.execute("""
-                ALTER TABLE usuarios 
+                ALTER TABLE usuarios
                 ADD COLUMN IF NOT EXISTS consent_given BOOLEAN DEFAULT FALSE,
                 ADD COLUMN IF NOT EXISTS consent_date TIMESTAMP
+            """)
+            cur.execute("""
+                ALTER TABLE usuarios
+                ADD COLUMN IF NOT EXISTS iban TEXT
             """)
             cur.execute("""
                 CREATE TABLE IF NOT EXISTS logs (
@@ -61,21 +65,22 @@ def guardar_config(chat_id, datos):
     with get_conn() as conn:
         with conn.cursor() as cur:
             cur.execute("""
-                INSERT INTO usuarios (chat_id, nombre, nif, direccion, telefono, email)
-                VALUES (%s, %s, %s, %s, %s, %s)
+                INSERT INTO usuarios (chat_id, nombre, nif, direccion, telefono, email, iban)
+                VALUES (%s, %s, %s, %s, %s, %s, %s)
                 ON CONFLICT (chat_id) DO UPDATE SET
                     nombre = EXCLUDED.nombre,
                     nif = EXCLUDED.nif,
                     direccion = EXCLUDED.direccion,
                     telefono = EXCLUDED.telefono,
-                    email = EXCLUDED.email
-            """, (chat_id, datos["nombre"], datos["nif"], datos["direccion"], datos["telefono"], datos["email"]))
+                    email = EXCLUDED.email,
+                    iban = EXCLUDED.iban
+            """, (chat_id, datos["nombre"], datos["nif"], datos["direccion"], datos["telefono"], datos["email"], datos.get("iban")))
         conn.commit()
 
 def cargar_config(chat_id):
     with get_conn() as conn:
         with conn.cursor() as cur:
-            cur.execute("SELECT nombre, nif, direccion, telefono, email FROM usuarios WHERE chat_id = %s", (chat_id,))
+            cur.execute("SELECT nombre, nif, direccion, telefono, email, iban FROM usuarios WHERE chat_id = %s", (chat_id,))
             row = cur.fetchone()
             if not row:
                 return None
@@ -84,7 +89,8 @@ def cargar_config(chat_id):
                 "nif": row[1],
                 "direccion": row[2],
                 "telefono": row[3],
-                "email": row[4]
+                "email": row[4],
+                "iban": row[5]
             }
 
 def get_siguiente_numero_factura(chat_id):
@@ -160,3 +166,12 @@ def tiene_consentimiento(chat_id):
             if not row:
                 return False
             return row[0] is True  # Solo True explícito, no NULL
+
+def guardar_iban(chat_id, iban):
+    """Guarda o actualiza el IBAN del autónomo"""
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute("""
+                UPDATE usuarios SET iban = %s WHERE chat_id = %s
+            """, (iban, chat_id))
+        conn.commit()

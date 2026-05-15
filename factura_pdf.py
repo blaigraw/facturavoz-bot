@@ -19,7 +19,7 @@ def generar_factura_pdf(datos, numero_factura=None, info_autonomo=None, tipo="fa
     # Nombre del archivo — incluye fecha y cliente para fácil identificación
     fecha_hoy = datetime.now().strftime("%Y%m%d")
     import re
-    cliente_slug = re.sub(r'[^a-zA-Z0-9]', '_', datos.get("cliente", "cliente"))[:20]
+    cliente_slug = re.sub(r'[^a-zA-Z0-9]', '_', datos.get("cliente_nombre", "cliente"))[:20]
     prefijo_archivo = "presupuesto" if tipo == "presupuesto" else "factura"
     # Crea la carpeta si no existe
     os.makedirs("documentos", exist_ok=True)
@@ -271,12 +271,21 @@ def generar_factura_pdf(datos, numero_factura=None, info_autonomo=None, tipo="fa
     elementos.append(Table([[""]], colWidths=[17*cm],
         style=TableStyle([("LINEABOVE", (0,0), (-1,-1), 0.5, colors.HexColor("#DEE2E6"))])))
     elementos.append(Spacer(1, 0.3*cm))
-    if tipo == "presupuesto" and datos.get("validez_dias") and datos["validez_dias"] is not None:        elementos.append(Spacer(1, 0.3*cm))
-    elementos.append(Paragraph(
-        f"Este presupuesto tiene una validez de {datos['validez_dias']} días.",
-        ParagraphStyle("validez", parent=styles["Normal"],
-            fontSize=9, textColor=colors.HexColor("#7F8C8D"), alignment=TA_CENTER)
-    ))
+    if tipo == "presupuesto" and datos.get("validez_dias") and datos["validez_dias"] is not None:
+        elementos.append(Spacer(1, 0.3*cm))
+        elementos.append(Paragraph(
+            f"Este presupuesto tiene una validez de {datos['validez_dias']} días.",
+            ParagraphStyle("validez", parent=styles["Normal"],
+                fontSize=9, textColor=colors.HexColor("#7F8C8D"), alignment=TA_CENTER)
+        ))
+    if info_autonomo.get("mostrar_iban") and info_autonomo.get("iban"):
+        elementos.append(Paragraph(
+            f"Forma de pago — Transferencia bancaria: {info_autonomo['iban']}",
+            ParagraphStyle("iban_pie", parent=styles["Normal"],
+                fontSize=9, textColor=colors.HexColor("#2C3E50"),
+                alignment=TA_CENTER)
+        ))
+        elementos.append(Spacer(1, 0.2*cm))
     elementos.append(Paragraph(
         "Gracias por confiar en nuestros servicios.",
         ParagraphStyle("pie", parent=styles["Normal"],
