@@ -1303,6 +1303,7 @@ conv_handler = ConversationHandler(
         ],
         ONBOARDING_REGISTRO: [
             CallbackQueryHandler(handle_onboarding_registro, pattern="^onboarding_registrar$"),
+            CallbackQueryHandler(handle_onboarding_prueba, pattern="^onboarding_prueba$"),
         ],
         ESPERANDO_AUDIO: [
             MessageHandler(filters.VOICE, handle_voice),

@@ -30,6 +30,8 @@ def generar_factura_pdf(datos, numero_factura=None, info_autonomo=None, tipo="fa
     # Crea la carpeta si no existe
     os.makedirs("documentos", exist_ok=True)
     nombre_archivo = f"documentos/{prefijo_archivo}_{fecha_hoy}_{cliente_slug}.pdf"
+    if es_prueba:
+        nombre_archivo = f"documentos/prueba_{fecha_hoy}_{cliente_slug}.pdf"
 
     # Número de factura por defecto
     if not numero_factura:
@@ -318,9 +320,10 @@ def generar_factura_pdf(datos, numero_factura=None, info_autonomo=None, tipo="fa
         if not es_prueba:
             return
         canvas_obj.saveState()
-        canvas_obj.setFont("Helvetica-Bold", 72)
-        canvas_obj.setFillColorRGB(0.85, 0.85, 0.85, alpha=0.3)
-        canvas_obj.translate(A4[0] / 2, A4[1] / 2)
+        canvas_obj.setFont("Helvetica-Bold", 80)
+        canvas_obj.setFillGray(0.80, alpha=0.25)
+        width, height = A4
+        canvas_obj.translate(width / 2, height / 2)
         canvas_obj.rotate(45)
         canvas_obj.drawCentredString(0, 0, "PRUEBA")
         canvas_obj.restoreState()
