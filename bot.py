@@ -868,14 +868,17 @@ conv_handler = ConversationHandler(
         ],
         ESPERANDO_AUDIO: [
             MessageHandler(filters.VOICE, handle_voice),
+            CallbackQueryHandler(handle_perfil_callbacks, pattern="^(perfil_|setiva_)"),
             CallbackQueryHandler(handle_confirmacion)
         ],
         ESPERANDO_CONFIRMACION: [
+            CallbackQueryHandler(handle_perfil_callbacks, pattern="^(perfil_|setiva_)"),
             CallbackQueryHandler(handle_confirmacion),
         ],
         ESPERANDO_VALOR_CAMPO: [
             MessageHandler(filters.VOICE, handle_voice_campo),
             MessageHandler(filters.TEXT & ~filters.COMMAND, handle_valor_campo),
+            CallbackQueryHandler(handle_perfil_callbacks, pattern="^(perfil_|setiva_)"),
         ],
         ESPERANDO_CONSENTIMIENTO: [
             CallbackQueryHandler(handle_consentimiento)
@@ -885,9 +888,10 @@ conv_handler = ConversationHandler(
         ],
     },
     fallbacks=[
-    CommandHandler("cancelar", cancelar),
-    CommandHandler("start", start),
-    CallbackQueryHandler(handle_consentimiento, pattern="^consent_")
+        CommandHandler("cancelar", cancelar),
+        CommandHandler("start", start),
+        CallbackQueryHandler(handle_perfil_callbacks, pattern="^(perfil_|setiva_)"),
+        CallbackQueryHandler(handle_consentimiento, pattern="^consent_")
     ]
 )
 
