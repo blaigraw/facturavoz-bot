@@ -33,6 +33,8 @@ REGISTRO_TELEFONO = 6
 REGISTRO_EMAIL = 7
 ESPERANDO_CONSENTIMIENTO = 8
 ESPERANDO_IBAN = 9
+EDITANDO_PERFIL_CAMPO = 11
+CONFIRMANDO_PERFIL_CAMPO = 12
 
 def get_prompt_sistema():
     """Genera el prompt con la fecha de hoy actualizada"""
@@ -768,15 +770,23 @@ async def privacidad(update: Update, _context: ContextTypes.DEFAULT_TYPE):
         parse_mode="Markdown"
     )
 async def cmd_perfil(update: Update, _context: ContextTypes.DEFAULT_TYPE):
-    """Muestra el perfil del autónomo con opciones de edición"""
+    """Muestra el perfil del autónomo"""
     chat_id = update.effective_chat.id
     config = cargar_config(chat_id)
     if not config:
-        await update.message.reply_text("No tienes perfil configurado. Usa /start para registrarte.")
+        await update.message.reply_text(
+            "No tienes perfil configurado. Usa /start para registrarte."
+        )
         return
-    iban_texto = config.get("iban") or "No configurado"
-    if config.get("iban") and len(config["iban"]) > 8:
-        iban_texto = config["iban"][:8] + "..."
+    await mostrar_perfil(update.message, chat_id)
+
+
+async def mostrar_perfil(message, chat_id):
+    """Muestra el perfil completo del autónomo"""
+    config = cargar_config(chat_id)
+    iban_texto = "No configurado"
+    if config.get("iban"):
+        iban_texto = config["iban"][:8] + "..." if len(config["iban"]) > 8 else config["iban"]
     iva_actual = config.get("iva", 0.21)
     iva_texto = "21% General" if iva_actual == 0.21 else "10% Reducido" if iva_actual == 0.10 else "Sin IVA"
     texto = (
@@ -807,14 +817,16 @@ async def cmd_perfil(update: Update, _context: ContextTypes.DEFAULT_TYPE):
             InlineKeyboardButton("🧾 IVA", callback_data="perfil_iva"),
         ]
     ])
-    await update.message.reply_text(texto, parse_mode="Markdown", reply_markup=teclado)
+    await message.reply_text(texto, parse_mode="Markdown", reply_markup=teclado)
 
 
-async def handle_perfil_callbacks(update: Update, _context: ContextTypes.DEFAULT_TYPE):
-    """Gestiona los callbacks del comando /perfil y edición de IVA"""
+async def handle_perfil_callbacks(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Gestiona los callbacks del comando /perfil y edición de campos"""
     query = update.callback_query
     await query.answer()
+    chat_id = query.message.chat_id
 
+    # IVA — flujo directo sin confirmación
     if query.data == "perfil_iva":
         teclado_iva = InlineKeyboardMarkup([
             [
@@ -827,12 +839,114 @@ async def handle_perfil_callbacks(update: Update, _context: ContextTypes.DEFAULT
             "🧾 Selecciona tu IVA habitual:",
             reply_markup=teclado_iva
         )
+        return
 
     elif query.data in ("setiva_21", "setiva_10", "setiva_0"):
         porcentaje = {"setiva_21": 0.21, "setiva_10": 0.10, "setiva_0": 0.0}[query.data]
         etiqueta = {"setiva_21": "21% General", "setiva_10": "10% Reducido", "setiva_0": "Sin IVA"}[query.data]
-        guardar_iva(query.message.chat_id, porcentaje)
-        await query.message.reply_text(f"✅ IVA actualizado a {etiqueta}.")
+        guardar_iva(chat_id, porcentaje)
+        await mostrar_perfil(query.message, chat_id)
+        return
+
+    # Campos de perfil — pide el nuevo valor
+    campos_perfil = {
+        "perfil_nombre": ("nombre", "👤 Nombre actual: {valor}\n\nEnvía el nuevo nombre en audio o escrito."),
+        "perfil_nif": ("nif", "🪪 NIF actual: {valor}\n\nEnvía el nuevo NIF en audio o escrito."),
+        "perfil_direccion": ("direccion", "📍 Dirección actual: {valor}\n\nEnvía la nueva dirección en audio o escrito."),
+        "perfil_telefono": ("telefono", "📞 Teléfono actual: {valor}\n\nEnvía el nuevo teléfono en audio o escrito."),
+        "perfil_email": ("email", "📧 Email actual: {valor}\n\nEnvía el nuevo email en audio o escrito."),
+        "perfil_iban": ("iban", "💳 IBAN actual: {valor}\n\nEnvía el nuevo IBAN en audio o escrito."),
+    }
+
+    if query.data in campos_perfil:
+        campo, mensaje_template = campos_perfil[query.data]
+        config = cargar_config(chat_id)
+        valor_actual = config.get(campo) or "No configurado"
+        context.user_data["perfil_campo_editando"] = campo
+        await query.message.reply_text(
+            mensaje_template.format(valor=valor_actual) + "\n\n/cancelar para salir."
+        )
+        return EDITANDO_PERFIL_CAMPO
+
+    elif query.data == "perfil_confirmar":
+        campo = context.user_data.get("perfil_campo_editando")
+        nuevo_valor = context.user_data.get("perfil_valor_pendiente")
+        config = cargar_config(chat_id)
+        config[campo] = nuevo_valor
+        guardar_config(chat_id, config)
+        await query.message.reply_text("✅ Guardado correctamente.")
+        await mostrar_perfil(query.message, chat_id)
+        return ESPERANDO_AUDIO
+
+    elif query.data == "perfil_repetir":
+        campo = context.user_data.get("perfil_campo_editando")
+        campos_nombres = {
+            "nombre": "nombre", "nif": "NIF", "direccion": "dirección",
+            "telefono": "teléfono", "email": "email", "iban": "IBAN"
+        }
+        await query.message.reply_text(
+            f"Envía el nuevo valor para {campos_nombres.get(campo, campo)} "
+            f"en audio o escrito.\n\n/cancelar para salir."
+        )
+        return EDITANDO_PERFIL_CAMPO
+
+
+async def handle_perfil_texto(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Recibe texto para actualizar un campo del perfil"""
+    campo = context.user_data.get("perfil_campo_editando")
+    if not campo:
+        return
+    valor = update.message.text.strip()
+    context.user_data["perfil_valor_pendiente"] = valor
+    teclado = InlineKeyboardMarkup([
+        [
+            InlineKeyboardButton("✅ Confirmar", callback_data="perfil_confirmar"),
+            InlineKeyboardButton("🔄 Repetir", callback_data="perfil_repetir")
+        ]
+    ])
+    await update.message.reply_text(
+        f"¿Es correcto?\n\n*{valor}*",
+        parse_mode="Markdown",
+        reply_markup=teclado
+    )
+
+
+async def handle_perfil_audio(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Recibe audio para actualizar un campo del perfil"""
+    campo = context.user_data.get("perfil_campo_editando")
+    if not campo:
+        return
+    await update.message.reply_text("🎙️ Audio recibido, transcribiendo...")
+    file = await context.bot.get_file(update.message.voice.file_id)
+    audio_path = "audio_perfil.ogg"
+    await file.download_to_drive(audio_path)
+    with open(audio_path, "rb") as audio_file:
+        transcription = client.audio.transcriptions.create(
+            model="whisper-1",
+            file=audio_file,
+            language="es"
+        )
+    valor_raw = transcription.text
+    await update.message.reply_text("⚙️ Interpretando...")
+    try:
+        resultado = await interpretar_campo_con_gpt(campo, valor_raw, {})
+        valor = list(resultado.values())[0]
+        if not isinstance(valor, str):
+            valor = str(valor)
+    except Exception:
+        valor = valor_raw
+    context.user_data["perfil_valor_pendiente"] = valor
+    teclado = InlineKeyboardMarkup([
+        [
+            InlineKeyboardButton("✅ Confirmar", callback_data="perfil_confirmar"),
+            InlineKeyboardButton("🔄 Repetir", callback_data="perfil_repetir")
+        ]
+    ])
+    await update.message.reply_text(
+        f"¿Es correcto?\n\n*{valor}*",
+        parse_mode="Markdown",
+        reply_markup=teclado
+    )
 
 
 async def post_init(application):
@@ -885,6 +999,11 @@ conv_handler = ConversationHandler(
         ],
         ESPERANDO_IBAN: [
             MessageHandler(filters.TEXT & ~filters.COMMAND, handle_iban),
+        ],
+        EDITANDO_PERFIL_CAMPO: [
+            MessageHandler(filters.VOICE, handle_perfil_audio),
+            MessageHandler(filters.TEXT & ~filters.COMMAND, handle_perfil_texto),
+            CallbackQueryHandler(handle_perfil_callbacks, pattern="^(perfil_|setiva_)"),
         ],
     },
     fallbacks=[
