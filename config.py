@@ -99,6 +99,10 @@ def guardar_config(chat_id, datos):
                     precio_hora = EXCLUDED.precio_hora,
                     mostrar_precio_hora = EXCLUDED.mostrar_precio_hora
             """, (chat_id, datos["nombre"], datos["nif"], datos["direccion"], datos["telefono"], datos["email"], datos.get("iban"), datos.get("iva", 0.21), datos.get("actividad"), datos.get("precio_hora"), datos.get("mostrar_precio_hora", True)))
+            cur.execute("""
+                UPDATE usuarios SET consent_given = TRUE, consent_date = NOW()
+                WHERE chat_id = %s AND consent_given IS NULL
+            """, (chat_id,))
         conn.commit()
 
 def cargar_config(chat_id):
@@ -197,9 +201,12 @@ def guardar_consentimiento(chat_id, tipo):
     with get_conn() as conn:
         with conn.cursor() as cur:
             cur.execute("""
-                UPDATE usuarios SET consent_given = %s, consent_date = NOW()
-                WHERE chat_id = %s
-            """, (tipo != 'no', chat_id))
+                INSERT INTO usuarios (chat_id, consent_given, consent_date)
+                VALUES (%s, %s, NOW())
+                ON CONFLICT (chat_id) DO UPDATE
+                SET consent_given = EXCLUDED.consent_given,
+                    consent_date = EXCLUDED.consent_date
+            """, (chat_id, tipo != 'no'))
         conn.commit()
 
 def tiene_consentimiento(chat_id):

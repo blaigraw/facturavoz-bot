@@ -33,7 +33,6 @@ REGISTRO_NIF = 4
 REGISTRO_DIRECCION = 5
 REGISTRO_TELEFONO = 6
 REGISTRO_EMAIL = 7
-ESPERANDO_CONSENTIMIENTO = 8
 ESPERANDO_IBAN = 9
 EDITANDO_PERFIL_CAMPO = 11
 CONFIRMANDO_PERFIL_CAMPO = 12
@@ -46,6 +45,7 @@ REGISTRO_ACTIVIDAD_OTRO = 18
 REGISTRO_NUMERO_FACTURA = 19
 REGISTRO_NUMERO_PRESUPUESTO = 20
 REGISTRO_MOSTRAR_PRECIO_HORA = 21
+CONSENT = 99
 
 TECLADO_CONFIRMAR = InlineKeyboardMarkup([
     [
@@ -189,49 +189,6 @@ def construir_teclado_campos():
             InlineKeyboardButton("📝 Observaciones", callback_data="campo_observaciones"),
         ],
      ])
-async def pedir_consentimiento(update: Update):
-    """Muestra el mensaje de consentimiento RGPD"""
-    teclado = InlineKeyboardMarkup([
-        [
-            InlineKeyboardButton("✅ Acepto todo", callback_data="consent_completo"),
-            InlineKeyboardButton("📋 Solo lo básico", callback_data="consent_basico"),
-        ],
-        [
-            InlineKeyboardButton("🚫 No acepto", callback_data="consent_no")
-        ]
-    ])
-    await update.message.reply_text(
-        "👋 Bienvenido a *FacturaVoz*\n\n"
-        "Para funcionar proceso tus notas de voz y genero facturas en PDF.\n\n"
-        "Opcionalmente, y solo con tu permiso, guardo las transcripciones "
-        "para mejorar el servicio.\n\n"
-        "📄 Usa /privacidad para más información.\n\n"
-        "¿Aceptas las condiciones?",
-        parse_mode="Markdown",
-        reply_markup=teclado
-    )
-
-async def handle_consentimiento(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Gestiona la respuesta al consentimiento RGPD"""
-    query = update.callback_query
-    await query.answer()
-    chat_id = query.message.chat_id
-
-    if query.data == "consent_no":
-        await query.edit_message_text(
-            "🚫 Sin tu consentimiento no puedo continuar.\n"
-            "Usa /start cuando quieras reconsiderarlo."
-        )
-        return ConversationHandler.END
-
-    tipo = "completo" if query.data == "consent_completo" else "basico"
-    guardar_consentimiento(chat_id, tipo)
-
-    await query.edit_message_text(
-        "✅ Gracias. Ya puedes empezar a usar FacturaVoz.\n\n"
-        "Envíame una nota de voz describiendo el trabajo."
-    )
-    return ESPERANDO_AUDIO
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data.clear()
     chat_id = update.effective_chat.id
@@ -247,41 +204,20 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(texto, parse_mode="Markdown")
         return ESPERANDO_AUDIO
 
-    # Usuario nuevo — onboarding
-    pruebas = get_pruebas_realizadas(chat_id)
-
-    if pruebas >= 3:
-        teclado = InlineKeyboardMarkup([[
-            InlineKeyboardButton(
-                "✅ Configurar mi perfil", callback_data="onboarding_registrar")
-        ]])
-        await update.message.reply_text(
-            "Ya has visto cómo funciona FacturaVoz 😊\n\n"
-            "Para seguir creando facturas con tus datos reales "
-            "necesitas configurar tu perfil.\n"
-            "Son 2 minutos — solo una vez.",
-            parse_mode="Markdown",
-            reply_markup=teclado
-        )
-        return ONBOARDING_REGISTRO
-
-    # Primera vez o tiene pruebas disponibles
+    # Usuario nuevo — mostrar aviso de privacidad primero
     teclado = InlineKeyboardMarkup([[
-        InlineKeyboardButton(
-            "🎙️ Hacer mi prueba gratis", callback_data="onboarding_prueba")
+        InlineKeyboardButton("✅ Acepto", callback_data="consent_aceptar"),
+        InlineKeyboardButton("❌ No acepto", callback_data="consent_rechazar")
     ]])
     await update.message.reply_text(
-        "👋 Bienvenido a *FacturaVoz*\n\n"
-        "Tu asistente personal para facturas y presupuestos.\n"
-        "Sin formularios. Sin Excel. Sin perder el tiempo.\n\n"
-        "Graba un audio describiendo un trabajo y en segundos "
-        "tienes el PDF listo para enviar. 📄\n\n"
-        "Hazte una prueba gratis — sin dar ningún dato todavía. 👇",
+        "Para generar tus facturas necesito guardar tus datos: nombre, NIF, dirección y cuenta bancaria.\n\n"
+        "Los uso solo para rellenar tus documentos. Nada más.\n\n"
+        "¿Aceptas?\n\n"
+        "_Más info: /privacidad_",
         parse_mode="Markdown",
         reply_markup=teclado
     )
-    await asyncio.sleep(0.3)
-    return ONBOARDING_PRUEBA
+    return CONSENT
 
 async def transcribir_audio_registro(update, context):
     """Transcribe un audio de voz en el flujo de registro"""
@@ -1757,6 +1693,44 @@ async def handle_perfil_audio(update: Update, context: ContextTypes.DEFAULT_TYPE
     )
 
 
+async def handle_consent(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Gestiona la respuesta al aviso de privacidad"""
+    query = update.callback_query
+    await query.answer()
+
+    if query.data == "consent_aceptar":
+        context.user_data["consent"] = True
+        pruebas = get_pruebas_realizadas(query.message.chat_id)
+        if pruebas >= 3:
+            teclado = InlineKeyboardMarkup([[
+                InlineKeyboardButton("✅ Configurar mi perfil", callback_data="onboarding_registrar")
+            ]])
+            await query.edit_message_text(
+                "Ya has visto cómo funciona FacturaVoz 😊\n\n"
+                "Para seguir necesitas configurar tu perfil.\n"
+                "Son 2 minutos — solo una vez.",
+                reply_markup=teclado
+            )
+            return ONBOARDING_REGISTRO
+        else:
+            teclado = InlineKeyboardMarkup([[
+                InlineKeyboardButton("🎙️ Hacer mi prueba gratis", callback_data="onboarding_prueba")
+            ]])
+            await query.edit_message_text(
+                "👋 Bienvenido a *FacturaVoz*\n\n"
+                "Graba un audio describiendo el trabajo y te genero la factura al momento.",
+                parse_mode="Markdown",
+                reply_markup=teclado
+            )
+            return ONBOARDING_PRUEBA
+
+    else:  # consent_rechazar
+        await query.edit_message_text(
+            "Sin aceptar no puedo guardar tus datos ni generar facturas.\n\n"
+            "Si cambias de opinión, vuelve con /start."
+        )
+        return ConversationHandler.END
+
 async def handle_onboarding_prueba(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -1869,6 +1843,9 @@ conv_handler = ConversationHandler(
             MessageHandler(filters.TEXT & ~filters.COMMAND, registro_numero_presupuesto),
             MessageHandler(filters.VOICE, registro_numero_presupuesto),
         ],
+        CONSENT: [
+            CallbackQueryHandler(handle_consent, pattern="^consent_"),
+        ],
         ONBOARDING_PRUEBA: [
             CallbackQueryHandler(handle_onboarding_prueba, pattern="^onboarding_prueba$"),
             CallbackQueryHandler(handle_onboarding_registro, pattern="^onboarding_registrar$"),
@@ -1894,9 +1871,6 @@ conv_handler = ConversationHandler(
             MessageHandler(filters.TEXT & ~filters.COMMAND, handle_valor_campo),
             CallbackQueryHandler(handle_perfil_callbacks, pattern="^(perfil_|setiva_)"),
         ],
-        ESPERANDO_CONSENTIMIENTO: [
-            CallbackQueryHandler(handle_consentimiento)
-        ],
         ESPERANDO_IBAN: [
             MessageHandler(filters.TEXT & ~filters.COMMAND, handle_iban),
         ],
@@ -1910,7 +1884,6 @@ conv_handler = ConversationHandler(
         CommandHandler("cancelar", cancelar),
         CommandHandler("start", start),
         CallbackQueryHandler(handle_perfil_callbacks, pattern="^(perfil_|setiva_)"),
-        CallbackQueryHandler(handle_consentimiento, pattern="^consent_")
     ]
 )
 
@@ -1941,6 +1914,7 @@ async def main():
         handle_perfil_callbacks, pattern="^(perfil_|setiva_)"
     ))
     app.add_handler(CallbackQueryHandler(handle_manos_a_la_obra, pattern="^manos_a_la_obra$"))
+    app.add_handler(CallbackQueryHandler(handle_consent, pattern="^consent_"))
 
     init_db()
     crear_tablas_mantenimiento()
