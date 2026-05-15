@@ -204,7 +204,7 @@ async def handle_consentimiento(update: Update, context: ContextTypes.DEFAULT_TY
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data.clear()
     chat_id = update.effective_chat.id
-    print(f"CHAT_ID: {chat_id}")
+
 
     # Usuario ya registrado — flujo normal
     if config_existe(chat_id):
