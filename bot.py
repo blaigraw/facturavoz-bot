@@ -362,7 +362,7 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
         contenido = respuesta.choices[0].message.content.strip()
         contenido = contenido.replace("```json", "").replace("```", "").strip()
         datos = json.loads(contenido)
-        total_materiales = sum(m["precio"] for m in datos["materiales"]) if datos["materiales"] else 0
+        total_materiales = sum(m["precio"] for m in datos["materiales"] if m.get("precio") is not None) if datos["materiales"] else 0
         total_horas = (datos["horas"] or 0) * (datos["precio_hora"] or 0)
         total_desplazamiento = datos["desplazamiento"] or 0
         datos["total"] = round(total_materiales + total_horas + total_desplazamiento, 2)
@@ -523,7 +523,7 @@ async def handle_confirmacion(update: Update, context: ContextTypes.DEFAULT_TYPE
             contenido = respuesta.choices[0].message.content.strip()
             contenido = contenido.replace("```json", "").replace("```", "").strip()
             datos = json.loads(contenido)
-            total_materiales = sum(m["precio"] for m in datos["materiales"]) if datos.get("materiales") else 0
+            total_materiales = sum(m["precio"] for m in datos["materiales"] if m.get("precio") is not None) if datos.get("materiales") else 0
             total_horas = (datos.get("horas") or 0) * (datos.get("precio_hora") or 0)
             datos["total"] = round(total_materiales + total_horas + (datos.get("desplazamiento") or 0), 2)
             context.user_data["datos_factura"] = datos
@@ -744,7 +744,7 @@ async def handle_valor_campo(update: Update, context: ContextTypes.DEFAULT_TYPE)
         return ESPERANDO_VALOR_CAMPO
 
     # Recalcula el total en Python siempre
-    total_materiales = sum(m["precio"] for m in datos["materiales"]) if datos["materiales"] else 0
+    total_materiales = sum(m["precio"] for m in datos["materiales"] if m.get("precio") is not None) if datos["materiales"] else 0
     total_horas = (datos["horas"] or 0) * (datos["precio_hora"] or 0)
     datos["total"] = round(total_materiales + total_horas + (datos["desplazamiento"] or 0), 2)
 
@@ -797,7 +797,7 @@ async def handle_voice_campo(update: Update, context: ContextTypes.DEFAULT_TYPE)
         return ESPERANDO_VALOR_CAMPO
 
     # Recalcula el total en Python siempre
-    total_materiales = sum(m["precio"] for m in datos["materiales"]) if datos["materiales"] else 0
+    total_materiales = sum(m["precio"] for m in datos["materiales"] if m.get("precio") is not None) if datos["materiales"] else 0
     total_horas = (datos["horas"] or 0) * (datos["precio_hora"] or 0)
     datos["total"] = round(total_materiales + total_horas + (datos["desplazamiento"] or 0), 2)
 
