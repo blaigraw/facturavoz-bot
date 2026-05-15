@@ -58,6 +58,8 @@ REGLAS:
 - concepto: primera letra mayúscula, resto minúsculas. Redacta de forma clara y profesional
 - materiales descripcion: primera letra mayúscula. Marcas comerciales respetadas (Roca, Grohe, Schneider, Legrand, Baxi...)
 - materiales precio: usa siempre el precio que cobra al cliente, nunca su coste. "Me costó 108 pero cobro 135" → 135
+- materiales agrupados: si varios materiales se mencionan con un precio total compartido ("adhesivo, crucetas y lechada, todo junto 8 euros") → agrúpalos en UN solo ítem. Ejemplo: {{"descripcion": "Adhesivo, crucetas y lechada", "precio": 8.0}}
+- materiales sin precio: si un material se menciona sin precio → usa "precio": null. No uses 0.0 cuando el precio no se menciona
 - observaciones: solo si menciona explícitamente algo para anotar (pago en efectivo, garantía, certificado). Máximo 2 líneas. Si no → null
 - total: suma materiales + (horas × precio_hora) + desplazamiento"""
 
@@ -84,7 +86,8 @@ def construir_resumen(datos, iva_porcentaje=0.21):
     if datos["materiales"]:
         resumen += "\n📦 *Materiales:*\n"
         for m in datos["materiales"]:
-            resumen += f"  • {m['descripcion']}: {m['precio']}€\n"
+            precio_texto = f"{m['precio']}€" if m.get("precio") is not None else "Pendiente"
+            resumen += f"  • {m['descripcion']}: {precio_texto}\n"
 
     resumen += (
         f"\n⏱️ *Horas:* {datos['horas'] or 0}h x {datos['precio_hora'] or 0}€ = {total_horas}€\n"
@@ -100,9 +103,9 @@ def construir_resumen(datos, iva_porcentaje=0.21):
     resumen += (
         f"\n💰 *Subtotal: {datos['total'] or 0}€*\n"
         f"🧾 *IVA ({iva_etiqueta}): {round((datos['total'] or 0) * iva_porcentaje, 2)}€*\n"
-        f"💵 *TOTAL: {round((datos['total'] or 0) * (1 + iva_porcentaje), 2)}€*\n\n"
-        f"¿Es correcto?"
+        f"💵 *TOTAL: {round((datos['total'] or 0) * (1 + iva_porcentaje), 2)}€*\n"
     )
+    resumen += "\n_✏️ Pulsa *Editar campo* si necesitas corregir algo._\n\n¿Es correcto?"
     return resumen
 
 def construir_teclado_confirmacion(tipo="factura"):
@@ -431,6 +434,26 @@ async def handle_confirmacion(update: Update, context: ContextTypes.DEFAULT_TYPE
             return ESPERANDO_CONFIRMACION
     elif query.data in ("confirmar_factura", "confirmar_presupuesto"):
         datos = context.user_data.get("datos_factura")
+        materiales_sin_precio = [
+            m for m in (datos.get("materiales") or [])
+            if m.get("precio") is None
+        ]
+
+        if materiales_sin_precio:
+            nombres = ", ".join(m["descripcion"] for m in materiales_sin_precio)
+            teclado_pendiente = InlineKeyboardMarkup([
+                [InlineKeyboardButton("✏️ Completar ahora", callback_data="editar")],
+                [InlineKeyboardButton("📋 Marcar como pendiente", callback_data="mat_pendiente")],
+                [InlineKeyboardButton("➡️ Dejar en blanco", callback_data="mat_blanco")]
+            ])
+            await query.message.reply_text(
+                f"⚠️ Estos materiales no tienen precio:\n_{nombres}_\n\n"
+                f"¿Cómo quieres gestionarlos?",
+                parse_mode="Markdown",
+                reply_markup=teclado_pendiente
+            )
+            return ESPERANDO_CONFIRMACION
+
         tipo = datos.get("tipo", "factura")
 
         if tipo == "factura":
@@ -550,6 +573,24 @@ async def handle_confirmacion(update: Update, context: ContextTypes.DEFAULT_TYPE
                 parse_mode="Markdown",
                 reply_markup=construir_teclado_confirmacion(datos.get("tipo", "factura"))
             )
+        return ESPERANDO_CONFIRMACION
+
+    elif query.data == "mat_pendiente":
+        datos = context.user_data.get("datos_factura")
+        for m in datos.get("materiales", []):
+            if m.get("precio") is None:
+                m["precio"] = "Pendiente"
+        context.user_data["datos_factura"] = datos
+        await generar_y_enviar_pdf(query, context)
+        return ESPERANDO_CONFIRMACION
+
+    elif query.data == "mat_blanco":
+        datos = context.user_data.get("datos_factura")
+        for m in datos.get("materiales", []):
+            if m.get("precio") is None:
+                m["precio"] = ""
+        context.user_data["datos_factura"] = datos
+        await generar_y_enviar_pdf(query, context)
         return ESPERANDO_CONFIRMACION
 
     elif query.data == "editar":
