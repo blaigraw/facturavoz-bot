@@ -1,8 +1,0 @@
-{
-    "python.defaultInterpreterPath": "/Users/blaigraw/miniconda3/envs/facturavoz/bin/python",
-    "python.terminal.activateEnvironment": true,
-    "terminal.integrated.env.osx": {
-        "CONDA_DEFAULT_ENV": "facturavoz",
-        "CONDA_PREFIX": "/Users/blaigraw/miniconda3/envs/facturavoz"
-    }
-}

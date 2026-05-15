@@ -1,7 +1,11 @@
 .env
+.envrc
 autonomo_config.json
 audio.ogg
 __pycache__/
 *.pyc
 *.ogg
 .DS_Store
+.vscode/
+documentos/
+Data Sintetica Borrar.txt

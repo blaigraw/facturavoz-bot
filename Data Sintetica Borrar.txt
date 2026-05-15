@@ -1,4 +1,0 @@
-Eliminar Dato Sintetico de la bSe de datos del servidor de Factura Voz Staging
-
-DELETE FROM usuarios WHERE nombre LIKE '%TESTDATA%';
-DELETE FROM logs WHERE concepto LIKE '%TESTDATA%';
