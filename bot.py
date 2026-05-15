@@ -1088,24 +1088,24 @@ conv_handler = ConversationHandler(
             MessageHandler(filters.TEXT & ~filters.COMMAND, registro_email)
         ],
         REGISTRO_ACTIVIDAD: [
-            CallbackQueryHandler(handle_actividad, pattern="^act_", per_message=False)
+            CallbackQueryHandler(handle_actividad, pattern="^act_")
         ],
         ESPERANDO_AUDIO: [
             MessageHandler(filters.VOICE, handle_voice),
-            CallbackQueryHandler(handle_perfil_callbacks, pattern="^(perfil_|setiva_)", per_message=False),
-            CallbackQueryHandler(handle_confirmacion, per_message=False)
+            CallbackQueryHandler(handle_perfil_callbacks, pattern="^(perfil_|setiva_)"),
+            CallbackQueryHandler(handle_confirmacion)
         ],
         ESPERANDO_CONFIRMACION: [
-            CallbackQueryHandler(handle_perfil_callbacks, pattern="^(perfil_|setiva_)", per_message=False),
-            CallbackQueryHandler(handle_confirmacion, per_message=False),
+            CallbackQueryHandler(handle_perfil_callbacks, pattern="^(perfil_|setiva_)"),
+            CallbackQueryHandler(handle_confirmacion),
         ],
         ESPERANDO_VALOR_CAMPO: [
             MessageHandler(filters.VOICE, handle_voice_campo),
             MessageHandler(filters.TEXT & ~filters.COMMAND, handle_valor_campo),
-            CallbackQueryHandler(handle_perfil_callbacks, pattern="^(perfil_|setiva_)", per_message=False),
+            CallbackQueryHandler(handle_perfil_callbacks, pattern="^(perfil_|setiva_)"),
         ],
         ESPERANDO_CONSENTIMIENTO: [
-            CallbackQueryHandler(handle_consentimiento, per_message=False)
+            CallbackQueryHandler(handle_consentimiento)
         ],
         ESPERANDO_IBAN: [
             MessageHandler(filters.TEXT & ~filters.COMMAND, handle_iban),
@@ -1113,7 +1113,7 @@ conv_handler = ConversationHandler(
         EDITANDO_PERFIL_CAMPO: [
             MessageHandler(filters.VOICE, handle_perfil_audio),
             MessageHandler(filters.TEXT & ~filters.COMMAND, handle_perfil_texto),
-            CallbackQueryHandler(handle_perfil_callbacks, pattern="^(perfil_|setiva_)", per_message=False),
+            CallbackQueryHandler(handle_perfil_callbacks, pattern="^(perfil_|setiva_)"),
         ],
     },
     fallbacks=[
