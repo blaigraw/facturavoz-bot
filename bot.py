@@ -207,9 +207,6 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
 
     if config_existe(chat_id):
-        if not tiene_consentimiento(chat_id):
-            await pedir_consentimiento(update)
-            return ESPERANDO_CONSENTIMIENTO
         config = cargar_config(chat_id)
         texto = (
             f"👋 Hola de nuevo, {config['nombre']}.\n\n"
