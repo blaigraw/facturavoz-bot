@@ -1589,6 +1589,20 @@ async def handle_perfil_audio(update: Update, context: ContextTypes.DEFAULT_TYPE
 async def handle_onboarding_prueba(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
+    chat_id = query.message.chat_id
+    pruebas = get_pruebas_realizadas(chat_id)
+    if pruebas >= 3:
+        teclado = InlineKeyboardMarkup([[
+            InlineKeyboardButton("✅ Configurar mi perfil", callback_data="onboarding_registrar")
+        ]])
+        await query.edit_message_text(
+            "Ya has visto cómo funciona FacturaVoz 😊\n\n"
+            "Para seguir necesitas configurar tu perfil.\n"
+            "Son 2 minutos — solo una vez.",
+            reply_markup=teclado
+        )
+        return ONBOARDING_REGISTRO
+    context.user_data["modo_prueba"] = True
     await query.edit_message_text(
         "🎙️ *Graba tu audio ahora*\n\n"
         "Habla como si le explicaras el trabajo a un colega. "
@@ -1606,23 +1620,6 @@ async def handle_onboarding_prueba(update: Update, context: ContextTypes.DEFAULT
         "podrás editar cualquier campo antes de confirmar. 👇",
         parse_mode="Markdown"
     )
-    chat_id = query.message.chat_id
-    pruebas = get_pruebas_realizadas(chat_id)
-    if pruebas >= 3:
-        teclado = InlineKeyboardMarkup([[
-            InlineKeyboardButton(
-                "✅ Configurar mi perfil",
-                callback_data="onboarding_registrar")
-        ]])
-        await query.edit_message_text(
-            "Ya has visto cómo funciona FacturaVoz 😊\n\n"
-            "Para seguir necesitas configurar tu perfil.\n"
-            "Son 2 minutos — solo una vez.",
-            reply_markup=teclado
-        )
-        return ONBOARDING_REGISTRO
-    context.user_data["modo_prueba"] = True
-    await asyncio.sleep(0.5)
     return ESPERANDO_AUDIO
 
 
