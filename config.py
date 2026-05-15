@@ -194,3 +194,15 @@ def guardar_iva(chat_id, iva):
         with conn.cursor() as cur:
             cur.execute("UPDATE usuarios SET iva = %s WHERE chat_id = %s", (iva, chat_id))
         conn.commit()
+
+def eliminar_usuario(chat_id):
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute("DELETE FROM usuarios WHERE chat_id = %s", (chat_id,))
+        conn.commit()
+
+def eliminar_logs(chat_id):
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute("DELETE FROM logs WHERE chat_id = %s", (chat_id,))
+        conn.commit()

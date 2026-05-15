@@ -1,7 +1,7 @@
 import os
 import json
 from datetime import datetime
-from config import config_existe, guardar_config, cargar_config, get_siguiente_numero_factura, get_siguiente_numero_presupuesto, init_db, guardar_log, guardar_consentimiento, tiene_consentimiento, guardar_iban, guardar_iva
+from config import config_existe, guardar_config, cargar_config, get_siguiente_numero_factura, get_siguiente_numero_presupuesto, init_db, guardar_log, guardar_consentimiento, tiene_consentimiento, guardar_iban, guardar_iva, eliminar_usuario, eliminar_logs
 from holded import crear_factura
 from factura_pdf import generar_factura_pdf
 from openai import OpenAI
@@ -752,6 +752,20 @@ async def generar_y_enviar_pdf_texto(update, context):
     nombre_pdf = generar_factura_pdf(datos, numero_factura=numero, info_autonomo=config, tipo=tipo, iva_porcentaje=iva_porcentaje)
     prefijo = "presupuesto" if es_presupuesto else "factura"
     emoji = "📋" if es_presupuesto else "🎉"
+    segundos = int(datetime.now().timestamp() - context.user_data.get("tiempo_inicio", datetime.now().timestamp()))
+    guardar_log(chat_id, {
+        "transcripcion": context.user_data.get("transcripcion"),
+        "tipo_detectado": context.user_data.get("tipo_detectado"),
+        "json_estructurado": datos,
+        "tipo_final": tipo,
+        "campos_editados": context.user_data.get("campos_editados", []),
+        "numero_ediciones": context.user_data.get("numero_ediciones", 0),
+        "numero_documento": numero,
+        "total_factura": datos.get("total"),
+        "concepto": datos.get("concepto"),
+        "accion_final": "confirmado",
+        "segundos_hasta_confirmacion": segundos
+    })
     with open(nombre_pdf, "rb") as pdf:
         await update.message.reply_document(
             document=pdf,
@@ -803,11 +817,8 @@ async def admin_reset(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text("❌ ID inválido.")
             return
 
-    with get_conn() as conn:
-        with conn.cursor() as cur:
-            cur.execute("DELETE FROM usuarios WHERE chat_id = %s", (target_id,))
-            cur.execute("DELETE FROM logs WHERE chat_id = %s", (target_id,))
-        conn.commit()
+    eliminar_logs(target_id)
+    eliminar_usuario(target_id)
 
     await update.message.reply_text(
         f"✅ Usuario {target_id} eliminado de la base de datos."
