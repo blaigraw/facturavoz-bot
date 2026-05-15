@@ -477,7 +477,7 @@ async def handle_confirmacion(update: Update, context: ContextTypes.DEFAULT_TYPE
 
         tipo = datos.get("tipo", "factura")
 
-        if tipo == "factura":
+        if tipo == "factura" and not context.user_data.get("modo_prueba"):
             config = cargar_config(query.message.chat_id)
             teclado_iban = InlineKeyboardMarkup([
                 [
