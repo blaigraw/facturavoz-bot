@@ -111,8 +111,11 @@ def construir_resumen(datos, iva_porcentaje=0.21):
             precio_texto = f"{m['precio']}€" if m.get("precio") is not None else "Pendiente"
             resumen += f"  • {m['descripcion']}: {precio_texto}\n"
 
+    precio_hora_label = f"{datos['precio_hora'] or 0}€/h"
+    if datos.get("precio_hora_es_default") and datos.get("precio_hora"):
+        precio_hora_label += " (tarifa habitual)"
     resumen += (
-        f"\n⏱️ *Horas:* {datos['horas'] or 0}h x {datos['precio_hora'] or 0}€ = {total_horas}€\n"
+        f"\n⏱️ *Horas:* {datos['horas'] or 0}h x {precio_hora_label} = {total_horas}€\n"
         f"🚗 *Desplazamiento:* {datos['desplazamiento'] or 0}€\n"
         f"📅 *Fecha:* {datos['fecha'] or 'No especificada'}\n"
     )
@@ -735,6 +738,15 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
         contenido = respuesta.choices[0].message.content.strip()
         contenido = contenido.replace("```json", "").replace("```", "").strip()
         datos = json.loads(contenido)
+        config_usuario = cargar_config(update.message.chat_id)
+        precio_hora_perfil = config_usuario.get("precio_hora") if config_usuario else None
+
+        if datos.get("precio_hora") is None and precio_hora_perfil:
+            datos["precio_hora"] = precio_hora_perfil
+            datos["precio_hora_es_default"] = True
+        else:
+            datos["precio_hora_es_default"] = False
+
         total_materiales = sum(m["precio"] for m in datos["materiales"] if m.get("precio") is not None) if datos["materiales"] else 0
         total_horas = (datos["horas"] or 0) * (datos["precio_hora"] or 0)
         total_desplazamiento = datos["desplazamiento"] or 0
