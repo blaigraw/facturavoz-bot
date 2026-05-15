@@ -320,8 +320,8 @@ def generar_factura_pdf(datos, numero_factura=None, info_autonomo=None, tipo="fa
         if not es_prueba:
             return
         canvas_obj.saveState()
-        canvas_obj.setFont("Helvetica", 60)
-        canvas_obj.setFillGray(0.75, alpha=0.15)
+        canvas_obj.setFont("Helvetica-Bold", 70)
+        canvas_obj.setFillGray(0.82, alpha=0.18)
         width, height = A4
         canvas_obj.translate(width / 2, height / 2)
         canvas_obj.rotate(45)

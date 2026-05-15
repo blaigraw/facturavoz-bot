@@ -892,8 +892,8 @@ async def generar_y_enviar_pdf(query, context):
         ])
         await query.message.reply_text(
             "¿Ves qué fácil? 🎉\n\n"
-            "FacturaVoz está en beta — es completamente gratis.\n"
-            "Configura tu perfil en 2 minutos y empieza\n"
+            "FacturaVoz está en beta — es completamente gratis.\n\n"
+            "Configura tu perfil en 2 minutos y empieza "
             "a generar facturas reales con tus datos. 👇",
             parse_mode="Markdown",
             reply_markup=teclado_post_prueba
@@ -1241,6 +1241,21 @@ async def handle_onboarding_prueba(update: Update, context: ContextTypes.DEFAULT
         "podrás editar cualquier campo antes de confirmar. 👇",
         parse_mode="Markdown"
     )
+    chat_id = query.message.chat_id
+    pruebas = get_pruebas_realizadas(chat_id)
+    if pruebas >= 3:
+        teclado = InlineKeyboardMarkup([[
+            InlineKeyboardButton(
+                "✅ Configurar mi perfil",
+                callback_data="onboarding_registrar")
+        ]])
+        await query.edit_message_text(
+            "Ya has visto cómo funciona FacturaVoz 😊\n\n"
+            "Para seguir necesitas configurar tu perfil.\n"
+            "Son 2 minutos — solo una vez.",
+            reply_markup=teclado
+        )
+        return ONBOARDING_REGISTRO
     context.user_data["modo_prueba"] = True
     await asyncio.sleep(0.5)
     return ESPERANDO_AUDIO
