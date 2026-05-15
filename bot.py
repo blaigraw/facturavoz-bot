@@ -286,7 +286,7 @@ async def transcribir_audio_registro(update, context):
 async def normalizar_por_gpt(texto_raw: str, campo: str) -> str:
     """Normaliza un valor de registro usando GPT según el campo"""
     instrucciones = {
-        "nombre": "Devuelve el nombre propio con las iniciales en mayúscula y el resto en minúscula. Solo el nombre, sin explicaciones.",
+        "nombre": "Devuelve el nombre completo con cada palabra en mayúscula inicial y el resto en minúscula. Aplica esto a nombre y apellidos por igual. Solo el nombre, sin explicaciones.",
         "nif": "Devuelve el NIF o CIF en mayúsculas, sin espacios ni guiones. Solo el valor, sin explicaciones.",
         "direccion": "Normaliza esta dirección española: tipo de vía con inicial mayúscula, nombre de la calle con iniciales en mayúscula, número, código postal (5 dígitos), ciudad en mayúsculas. Formato: 'Calle Mayor 12, 08001 BARCELONA'. Solo la dirección, sin explicaciones.",
         "telefono": "Devuelve solo los dígitos del teléfono español, sin espacios ni guiones. Solo el valor.",
@@ -635,6 +635,9 @@ async def _guardar_registro_completo(query, context):
         f"Ya puedes empezar. Envíame una nota de voz describiendo el trabajo.",
         parse_mode="Markdown"
     )
+    print(f"[DEBUG] modo_prueba antes: {context.user_data.get('modo_prueba')}")
+    context.user_data["modo_prueba"] = False
+    print(f"[DEBUG] modo_prueba después: {context.user_data.get('modo_prueba')}")
     return ESPERANDO_AUDIO
 
 async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
