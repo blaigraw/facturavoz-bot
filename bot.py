@@ -418,7 +418,6 @@ async def handle_confirmacion(update: Update, context: ContextTypes.DEFAULT_TYPE
     elif query.data in ("confirmar_factura", "confirmar_presupuesto"):
         datos = context.user_data.get("datos_factura")
         tipo = datos.get("tipo", "factura")
-        es_presupuesto = tipo == "presupuesto"
 
         if tipo == "factura":
             config = cargar_config(query.message.chat_id)
@@ -811,7 +810,7 @@ async def cmd_perfil(update: Update, _context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(texto, parse_mode="Markdown", reply_markup=teclado)
 
 
-async def handle_perfil_callbacks(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def handle_perfil_callbacks(update: Update, _context: ContextTypes.DEFAULT_TYPE):
     """Gestiona los callbacks del comando /perfil y edición de IVA"""
     query = update.callback_query
     await query.answer()
