@@ -1110,6 +1110,7 @@ async def main():
     webhook_url = os.getenv("WEBHOOK_URL")
     port = int(os.getenv("PORT", 8080))
 
+    await app.bot.delete_webhook(drop_pending_updates=True)
     await app.bot.set_webhook(
         url=f"{webhook_url}/webhook",
         allowed_updates=["message", "callback_query"]
