@@ -18,7 +18,7 @@ from telegram.ext import (
 )
 
 # Carga variables de entorno del archivo .env
-load_dotenv()
+load_dotenv(override=False)
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
