@@ -35,6 +35,7 @@ ESPERANDO_CONSENTIMIENTO = 8
 ESPERANDO_IBAN = 9
 EDITANDO_PERFIL_CAMPO = 11
 CONFIRMANDO_PERFIL_CAMPO = 12
+REGISTRO_ACTIVIDAD = 13
 
 def get_prompt_sistema():
     """Genera el prompt con la fecha de hoy actualizada"""
@@ -271,40 +272,65 @@ async def registro_telefono(update: Update, context: ContextTypes.DEFAULT_TYPE):
     return REGISTRO_EMAIL
 
 async def registro_email(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Recibe el email y guarda toda la configuración"""
+    """Recibe el email y pregunta la actividad"""
+    teclado_actividad = InlineKeyboardMarkup([
+        [
+            InlineKeyboardButton("🔧 Fontanero", callback_data="act_fontanero"),
+            InlineKeyboardButton("⚡ Electricista", callback_data="act_electricista"),
+        ],
+        [
+            InlineKeyboardButton("🏗️ Reformas", callback_data="act_reformas"),
+            InlineKeyboardButton("🎨 Pintor", callback_data="act_pintor"),
+        ],
+        [
+            InlineKeyboardButton("🪚 Carpintero", callback_data="act_carpintero"),
+            InlineKeyboardButton("❓ Otro", callback_data="act_otro"),
+        ]
+    ])
+    context.user_data["reg_email"] = update.message.text
+    await update.message.reply_text(
+        "¿Cuál es tu actividad principal?",
+        reply_markup=teclado_actividad
+    )
+    return REGISTRO_ACTIVIDAD
+
+
+async def handle_actividad(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Recibe la actividad del autónomo y completa el registro"""
+    query = update.callback_query
+    await query.answer()
+    actividades = {
+        "act_fontanero": "Fontanero",
+        "act_electricista": "Electricista",
+        "act_reformas": "Reformas",
+        "act_pintor": "Pintor",
+        "act_carpintero": "Carpintero",
+        "act_otro": "Otro"
+    }
+    actividad = actividades.get(query.data, "Otro")
     config = {
         "nombre": context.user_data["reg_nombre"],
         "nif": context.user_data["reg_nif"],
         "direccion": context.user_data["reg_direccion"],
         "telefono": context.user_data["reg_telefono"],
-        "email": update.message.text
+        "email": context.user_data["reg_email"],
+        "actividad": actividad
     }
-    chat_id = update.effective_chat.id
+    chat_id = query.message.chat_id
     guardar_config(chat_id, config)
-    await update.message.reply_text(
-        f"✅ *Configuración guardada correctamente.*\n\n"
+    guardar_iva(chat_id, 0.21)
+    await query.edit_message_text(
+        f"✅ *Registro completado.*\n\n"
         f"👤 *Nombre:* {config['nombre']}\n"
         f"🪪 *NIF:* {config['nif']}\n"
         f"📍 *Dirección:* {config['direccion']}\n"
         f"📞 *Teléfono:* {config['telefono']}\n"
-        f"📧 *Email:* {config['email']}\n\n"
-        "Ya puedes empezar a crear facturas y presupuestos.\n\n"
-        "Envíame una nota de voz describiendo el trabajo y te generaré "
-        "una *factura* o *presupuesto* al instante.\n\n"
-        "Puedes decir por ejemplo:\n"
-        "• _'Hazme una factura para Juan García, dirección Calle Mayor 1, "
-        "reparación de tubería, 3 horas a 35 euros/h, desplazamiento 20 euros'_\n\n"
-        "• _'Necesito un presupuesto para Maria López, reforma de cocina, "
-        "materiales 500 euros, 8 horas a 30 euros'_\n\n"
-        "Intenta incluir:\n"
-        "• Nombre y dirección del cliente\n"
-        "• Trabajo realizado\n"
-        "• Materiales usados y su precio\n"
-        "• Horas trabajadas y precio por hora\n"
-        "• Desplazamiento si lo hay\n"
-        "• Fecha del trabajo\n\n"
-        "💡 Tu IVA habitual está configurado al 21%. "
-        "Puedes cambiarlo en cualquier momento con /perfil.",
+        f"📧 *Email:* {config['email']}\n"
+        f"🔧 *Actividad:* {actividad}\n\n"
+        f"💡 Tu IVA habitual está configurado al 21%. "
+        f"Puedes cambiarlo en /perfil.\n\n"
+        f"Ya puedes empezar. Envíame una nota de voz "
+        f"describiendo el trabajo.",
         parse_mode="Markdown"
     )
     return ESPERANDO_AUDIO
@@ -543,10 +569,12 @@ Además de interpretar el valor, aplica siempre estas correcciones:
 - Corrige errores ortográficos y de acentuación
 - Nombres propios con primera letra en mayúscula (personas, empresas, calles)
 - Marcas comerciales con su capitalización correcta (Roca, Grohe, Schneider, Legrand, Fermax, Baxi, Vaillant, etc.)
-- Direcciones en formato postal español: "Calle/Avenida/Plaza Nombre, número, piso, CP Municipio, Provincia". Solo incluye el código postal si estás seguro al 100%. Si hay duda, omítelo y deja la dirección sin CP. Usa abreviaciones estándar españolas: C/ para Calle, Avda. para Avenida, Pza. para Plaza, Ctra. para Carretera. Ejemplo: "C/ Virgen del Pilar, 34, 3ºA, 28820 Coslada, Madrid"
+- Direcciones en formato postal español: "Calle/Avenida/Plaza Nombre, número, piso, CP Municipio, Provincia". Si el usuario menciona explícitamente un código postal, inclúyelo siempre. Si no lo menciona, solo ponlo si estás seguro al 100%. Usa abreviaciones estándar: C/ para Calle, Avda. para Avenida, Pza. para Plaza, Ctra. para Carretera. Ejemplo: "C/ Virgen del Pilar, 34, 3ºA, 28820 Coslada, Madrid"
 - Conceptos de trabajo: primera letra mayúscula, resto minúsculas, excepto nombres propios
 - Materiales: primera letra mayúscula, marcas comerciales respetadas
-- NIF/CIF: siempre en mayúsculas con formato correcto
+- NIF/NIE: siempre en mayúsculas, sin espacios ni guiones. DNI: 8 dígitos + letra (ej: "12345678A"). NIE: letra + 7 dígitos + letra (ej: "X1234567B")
+- Teléfono: formato español con espacios cada 3 dígitos, ej: "634 812 755"
+- IBAN: elimina espacios, convierte a mayúsculas, luego formatea en grupos de 4. Ejemplo: {{"iban": "ES91 2100 0418 4200 0512 3456"}}
 
 Devuelve SOLO el JSON, sin texto adicional.
 """
@@ -786,7 +814,8 @@ async def mostrar_perfil(message, chat_id):
     config = cargar_config(chat_id)
     iban_texto = "No configurado"
     if config.get("iban"):
-        iban_texto = config["iban"][:8] + "..." if len(config["iban"]) > 8 else config["iban"]
+        iban_raw = config["iban"].replace(" ", "").upper()
+        iban_texto = " ".join(iban_raw[i:i+4] for i in range(0, len(iban_raw), 4))
     iva_actual = config.get("iva", 0.21)
     iva_texto = "21% General" if iva_actual == 0.21 else "10% Reducido" if iva_actual == 0.10 else "Sin IVA"
     texto = (
@@ -843,7 +872,6 @@ async def handle_perfil_callbacks(update: Update, context: ContextTypes.DEFAULT_
 
     elif query.data in ("setiva_21", "setiva_10", "setiva_0"):
         porcentaje = {"setiva_21": 0.21, "setiva_10": 0.10, "setiva_0": 0.0}[query.data]
-        etiqueta = {"setiva_21": "21% General", "setiva_10": "10% Reducido", "setiva_0": "Sin IVA"}[query.data]
         guardar_iva(chat_id, porcentaje)
         await mostrar_perfil(query.message, chat_id)
         return
@@ -987,6 +1015,9 @@ conv_handler = ConversationHandler(
         ],
         REGISTRO_EMAIL: [
             MessageHandler(filters.TEXT & ~filters.COMMAND, registro_email)
+        ],
+        REGISTRO_ACTIVIDAD: [
+            CallbackQueryHandler(handle_actividad, pattern="^act_")
         ],
         ESPERANDO_AUDIO: [
             MessageHandler(filters.VOICE, handle_voice),

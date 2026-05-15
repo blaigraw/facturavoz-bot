@@ -7,7 +7,7 @@ from reportlab.lib import colors
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
 from reportlab.lib.enums import TA_RIGHT, TA_CENTER, TA_LEFT
 
-def generar_factura_pdf(datos, numero_factura=None, info_autonomo=None, tipo="factura"):
+def generar_factura_pdf(datos, numero_factura=None, info_autonomo=None, tipo="factura", iva_porcentaje=0.21):
     """
     Genera un PDF de factura con los datos estructurados del bot.
     
@@ -236,12 +236,14 @@ def generar_factura_pdf(datos, numero_factura=None, info_autonomo=None, tipo="fa
     elementos.append(Spacer(1, 0.5*cm))
 
     # ── TOTALES ───────────────────────────────────────────
-    iva = subtotal * 0.21
+    iva_porcentaje_display = f"{int(iva_porcentaje * 100)}%" if iva_porcentaje > 0 else "Exento"
+    iva = subtotal * iva_porcentaje
     total = subtotal + iva
 
+    fila_iva = ["IVA:", "Exento"] if iva_porcentaje == 0.0 else [f"IVA ({iva_porcentaje_display}):", f"{iva:.2f}€"]
     tabla_totales = Table([
         ["Subtotal:", f"{subtotal:.2f}€"],
-        ["IVA (21%):", f"{iva:.2f}€"],
+        fila_iva,
     ], colWidths=[14*cm, 3*cm])
     tabla_totales.setStyle(TableStyle([
         ("ALIGN", (1,0), (1,-1), "RIGHT"),
@@ -279,8 +281,10 @@ def generar_factura_pdf(datos, numero_factura=None, info_autonomo=None, tipo="fa
                 fontSize=9, textColor=colors.HexColor("#7F8C8D"), alignment=TA_CENTER)
         ))
     if info_autonomo.get("mostrar_iban") and info_autonomo.get("iban"):
+        iban_raw = info_autonomo["iban"].replace(" ", "").upper()
+        iban_formateado = " ".join(iban_raw[i:i+4] for i in range(0, len(iban_raw), 4))
         elementos.append(Paragraph(
-            f"Forma de pago — Transferencia bancaria: {info_autonomo['iban']}",
+            f"Transferencia bancaria: {iban_formateado}",
             ParagraphStyle("iban_pie", parent=styles["Normal"],
                 fontSize=10, textColor=colors.HexColor("#2C3E50"),
                 alignment=TA_LEFT)
