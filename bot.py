@@ -1080,14 +1080,56 @@ conv_handler = ConversationHandler(
     ]
 )
 
-# Construye y arranca el bot
-app = ApplicationBuilder().token(TELEGRAM_TOKEN).post_init(post_init).build()
-app.add_handler(conv_handler)
+import asyncio
+from aiohttp import web
 
-init_db()
-print("Bot activo...")
-app.add_handler(CommandHandler("privacidad", privacidad))
-app.add_handler(CommandHandler("perfil", cmd_perfil))
-app.add_handler(CommandHandler("admin_reset", admin_reset))
-app.add_handler(CallbackQueryHandler(handle_perfil_callbacks, pattern="^(perfil_|setiva_)"))
-app.run_polling()
+async def handle_webhook(request):
+    """Recibe updates de Telegram vía webhook"""
+    data = await request.json()
+    update = Update.de_json(data, app.bot)
+    await app.process_update(update)
+    return web.Response(status=200)
+
+async def main():
+    """Arranca el bot en modo webhook"""
+    global app
+    app = ApplicationBuilder().token(TELEGRAM_TOKEN).post_init(post_init).build()
+
+    # Registra todos los handlers
+    app.add_handler(conv_handler)
+    app.add_handler(CommandHandler("privacidad", privacidad))
+    app.add_handler(CommandHandler("perfil", cmd_perfil))
+    app.add_handler(CommandHandler("admin_reset", admin_reset))
+    app.add_handler(CallbackQueryHandler(
+        handle_perfil_callbacks, pattern="^(perfil_|setiva_)"
+    ))
+
+    init_db()
+
+    # Configura el webhook
+    webhook_url = os.getenv("WEBHOOK_URL")
+    port = int(os.getenv("PORT", 8080))
+
+    await app.bot.set_webhook(
+        url=f"{webhook_url}/webhook",
+        allowed_updates=["message", "callback_query"]
+    )
+
+    # Servidor web para recibir los updates
+    web_app = web.Application()
+    web_app.router.add_post("/webhook", handle_webhook)
+    web_app.router.add_get("/health", lambda r: web.Response(text="OK"))
+
+    runner = web.AppRunner(web_app)
+    await runner.setup()
+    site = web.TCPSite(runner, "0.0.0.0", port)
+
+    print(f"Bot activo en webhook — {webhook_url}/webhook")
+
+    async with app:
+        await app.start()
+        await site.start()
+        await asyncio.Event().wait()  # mantiene el proceso vivo
+
+if __name__ == "__main__":
+    asyncio.run(main())
