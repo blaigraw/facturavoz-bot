@@ -562,7 +562,7 @@ async def handle_confirmacion(update: Update, context: ContextTypes.DEFAULT_TYPE
 
     elif query.data == "audio_cancelar":
         await query.edit_message_text(
-            "❌ Audio descartado. Tu factura anterior sigue activa."
+            "↩️ Volvemos a lo que tenías."
         )
         datos = context.user_data.get("datos_factura")
         if datos:
@@ -918,13 +918,13 @@ async def handle_voice_inesperado(update: Update, context: ContextTypes.DEFAULT_
 
     teclado = InlineKeyboardMarkup([
         [
-            InlineKeyboardButton("🔄 Nueva factura con este audio", callback_data="audio_reemplazar"),
-            InlineKeyboardButton("❌ Cancelar", callback_data="audio_cancelar")
+            InlineKeyboardButton("🔄 Empezar nuevo", callback_data="audio_reemplazar"),
+            InlineKeyboardButton("↩️ Volver al actual", callback_data="audio_cancelar")
         ]
     ])
     await update.message.reply_text(
-        "⚠️ Ya tienes una factura en curso.\n\n"
-        "¿Qué quieres hacer?",
+        "⚠️ Ya tienes un documento en curso.\n\n"
+        "¿Qué quieres hacer con este audio?",
         reply_markup=teclado
     )
     return ESPERANDO_CONFIRMACION
