@@ -39,50 +39,27 @@ CONFIRMANDO_PERFIL_CAMPO = 12
 REGISTRO_ACTIVIDAD = 13
 
 def get_prompt_sistema():
-    """Genera el prompt con la fecha de hoy actualizada"""
     hoy = datetime.now().strftime("%d/%m/%Y")
-    return f"""
-Eres un asistente para autónomos del sector construcción en España.
-Recibirás una transcripción de una nota de voz informal.
-Tu trabajo es extraer los datos para generar una factura o presupuesto.
+    return f"""Eres un asistente de facturación para autónomos de construcción en España.
+Extrae datos de una nota de voz informal y devuelve SOLO este JSON, sin texto adicional ni bloques de código:
 
-La fecha de hoy es {hoy}. Usa esta fecha por defecto si no se menciona otra.
+{{"tipo": null, "cliente_nombre": null, "cliente_direccion": null, "concepto": null,
+"observaciones": null, "materiales": [{{"descripcion": null, "precio": 0.00}}],
+"horas": null, "precio_hora": null, "desplazamiento": null,
+"validez_dias": null, "fecha": "{hoy}", "total": 0.00}}
 
-Devuelve SOLO un JSON válido con estos campos exactos:
-{{
-    "tipo": "factura o presupuesto según lo que mencione el audio. Si no se menciona, usa null",
-    "cliente_nombre": "nombre de la persona o empresa",
-    "cliente_direccion": "dirección completa del cliente",
-    "concepto": "descripción del trabajo realizado",
-    "observaciones": null,
-    "materiales": [{{"descripcion": "...", "precio": 0.00}}],
-    "horas": 0,
-    "precio_hora": 0.00,
-    "desplazamiento": 0.00,
-    "validez_dias": null,
-    "fecha": "{hoy}",
-    "total": 0.00
-}}
-
-Reglas:
-- Si un dato no aparece, ponlo como null
-- Ordena los datos y la informacion de la manera mas comoda para leer e introducir en una factura, con signos de puntuacion.
- Estructura la direccion como sereia la manera legal y aceptada por instituciones.
- Usa abreviaciones estándar españolas: C/ para Calle, Avda. para Avenida, Pza. para Plaza, Ctra. para Carretera.
- Ejemplo: "C/ Virgen del Pilar, 34, 3ºA, 28820 Coslada, Madrid"
-- El campo tipo solo puede ser "factura" o "presupuesto" o null
-- Si el audio menciona palabras como "presupuesto", "precio aproximado", "cuánto costaría" → tipo: "presupuesto"
-- Si el audio menciona "factura", "cobrar", "trabajo terminado" → tipo: "factura"
-- Si tipo es "presupuesto", validez_dias por defecto es 30 salvo que se indique otro
-- Si tipo es "factura", validez_dias es null
-- En el concepto escribe solo la primera letra en mayúscula y el resto en minúscula, excepto nombres propios y marcas comerciales
-- En los materiales capitaliza solo la primera letra de la descripción y los nombres de marcas comerciales (ej: "Grifo Roca", "Portero Fermax")
-- El total es la suma de materiales + (horas x precio_hora) + desplazamiento
-- La fecha de hoy es {hoy} — úsala si no se menciona otra fecha, si se menciona una fecha concreta calcula la fecha exacta en formato DD/MM/YYYY partiendo de que hoy es {hoy}
-- Si se menciona una fecha relativa como 'ayer', 'la semana pasada', 'el lunes pasado', calcula la fecha exacta en formato DD/MM/YYYY partiendo de que hoy es {hoy}
-- "observaciones": extrae este campo SOLO si el autónomo menciona explícitamente algo para anotar: pagos en efectivo, garantías, certificados, condiciones especiales, notas para el cliente. Frases como "anota que", "para que conste", "el cliente pagó en efectivo", "garantía de X meses". Si no hay nada explícito, ponlo como null. Máximo 2 líneas de texto.
-- Devuelve SOLO el JSON, sin texto adicional ni bloques de código
-"""
+REGLAS:
+- Datos no mencionados → null
+- tipo: "factura" si menciona cobrar/trabajo terminado, "presupuesto" si menciona precio aproximado/cuánto costaría, null si no está claro
+- validez_dias: el que indique el audio, 30 por defecto si es presupuesto, null si es factura
+- fecha: usa {hoy} por defecto. Fechas relativas ("ayer", "el lunes"...) calcúlalas desde {hoy} en DD/MM/YYYY
+- cliente_nombre: capitaliza correctamente. Empresas en su formato oficial
+- cliente_direccion: formato postal español con abreviaciones (C/, Avda., Pza., Ctra.). Ejemplo: "C/ Mayor, 4, 2ºB, 28013 Madrid". CP solo si estás seguro
+- concepto: primera letra mayúscula, resto minúsculas. Redacta de forma clara y profesional
+- materiales descripcion: primera letra mayúscula. Marcas comerciales respetadas (Roca, Grohe, Schneider, Legrand, Baxi...)
+- materiales precio: usa siempre el precio que cobra al cliente, nunca su coste. "Me costó 108 pero cobro 135" → 135
+- observaciones: solo si menciona explícitamente algo para anotar (pago en efectivo, garantía, certificado). Máximo 2 líneas. Si no → null
+- total: suma materiales + (horas × precio_hora) + desplazamiento"""
 
 def construir_resumen(datos, iva_porcentaje=0.21):
     """Construye el texto del resumen — factura o presupuesto"""
