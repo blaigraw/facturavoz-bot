@@ -1222,7 +1222,6 @@ async def handle_perfil_audio(update: Update, context: ContextTypes.DEFAULT_TYPE
 
 async def handle_onboarding_prueba(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
-    print(f"DEBUG onboarding_prueba llamado — query.data: {query.data}")
     await query.answer()
     await query.edit_message_text(
         "🎙️ *Graba tu audio ahora*\n\n"
