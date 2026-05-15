@@ -265,3 +265,61 @@ def eliminar_logs(chat_id):
         with conn.cursor() as cur:
             cur.execute("DELETE FROM logs WHERE chat_id = %s", (chat_id,))
         conn.commit()
+
+def crear_tablas_mantenimiento():
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS config (
+                    clave VARCHAR(100) PRIMARY KEY,
+                    valor VARCHAR(500)
+                )
+            """)
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS notificaciones_pendientes (
+                    chat_id BIGINT PRIMARY KEY
+                )
+            """)
+        conn.commit()
+
+def get_mantenimiento():
+    env_val = os.getenv("MAINTENANCE_MODE", "").lower()
+    if env_val == "true":
+        return True
+    if env_val == "false":
+        return False
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute("SELECT valor FROM config WHERE clave = 'maintenance_mode'")
+            row = cur.fetchone()
+            return row is not None and row[0] == "true"
+
+def set_mantenimiento(activo: bool):
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute("""
+                INSERT INTO config (clave, valor) VALUES ('maintenance_mode', %s)
+                ON CONFLICT (clave) DO UPDATE SET valor = EXCLUDED.valor
+            """, ("true" if activo else "false",))
+        conn.commit()
+
+def add_notificacion_pendiente(chat_id: int):
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute("""
+                INSERT INTO notificaciones_pendientes (chat_id) VALUES (%s)
+                ON CONFLICT DO NOTHING
+            """, (chat_id,))
+        conn.commit()
+
+def get_notificaciones_pendientes():
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute("SELECT chat_id FROM notificaciones_pendientes")
+            return [row[0] for row in cur.fetchall()]
+
+def vaciar_notificaciones_pendientes():
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute("DELETE FROM notificaciones_pendientes")
+        conn.commit()

@@ -1,7 +1,7 @@
 import os
 import json
 from datetime import datetime
-from config import config_existe, guardar_config, cargar_config, get_siguiente_numero_factura, get_siguiente_numero_presupuesto, init_db, guardar_log, guardar_consentimiento, tiene_consentimiento, guardar_iban, guardar_iva, eliminar_usuario, eliminar_logs, get_pruebas_realizadas, incrementar_prueba, guardar_numero_inicial_factura, guardar_numero_inicial_presupuesto, get_user_exists
+from config import config_existe, guardar_config, cargar_config, get_siguiente_numero_factura, get_siguiente_numero_presupuesto, init_db, guardar_log, guardar_consentimiento, tiene_consentimiento, guardar_iban, guardar_iva, eliminar_usuario, eliminar_logs, get_pruebas_realizadas, incrementar_prueba, guardar_numero_inicial_factura, guardar_numero_inicial_presupuesto, get_user_exists, crear_tablas_mantenimiento, get_mantenimiento, set_mantenimiento, add_notificacion_pendiente, get_notificaciones_pendientes, vaciar_notificaciones_pendientes
 from holded import crear_factura
 from factura_pdf import generar_factura_pdf
 from openai import OpenAI
@@ -14,7 +14,8 @@ from telegram.ext import (
     CallbackQueryHandler,
     filters,
     ContextTypes,
-    ConversationHandler
+    ConversationHandler,
+    ApplicationHandlerStop
 )
 
 # Carga variables de entorno del archivo .env
@@ -1392,6 +1393,61 @@ async def cancelar(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
     context.user_data.clear()
     return ConversationHandler.END
+async def check_mantenimiento(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Intercepta todos los mensajes cuando el bot está en mantenimiento"""
+    if not update.effective_chat:
+        return
+    chat_id = update.effective_chat.id
+    if chat_id == ADMIN_CHAT_ID:
+        return  # El admin pasa siempre
+    if not get_mantenimiento():
+        return  # Bot activo, dejar pasar
+    add_notificacion_pendiente(chat_id)
+    await update.effective_message.reply_text(
+        "🔧 FacturaVoz está en mantenimiento.\n\nTe avisaré cuando vuelva a estar listo. ¡Hasta ahora!"
+    )
+    raise ApplicationHandlerStop
+
+async def admin_mantenimiento(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Activa o desactiva el modo mantenimiento — solo admin"""
+    if update.effective_chat.id != ADMIN_CHAT_ID:
+        return
+    args = context.args
+    if not args or args[0].lower() not in ("on", "off"):
+        await update.message.reply_text("Uso: /admin_mantenimiento on|off")
+        return
+    activar = args[0].lower() == "on"
+    set_mantenimiento(activar)
+    if activar:
+        await update.message.reply_text("🔧 Mantenimiento activado. El bot está bloqueado para todos los usuarios.")
+    else:
+        pendientes = get_notificaciones_pendientes()
+        vaciar_notificaciones_pendientes()
+        keyboard = [[InlineKeyboardButton("🔨 Manos a la obra", callback_data="manos_a_la_obra")]]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        enviados = 0
+        for uid in pendientes:
+            try:
+                await context.bot.send_message(
+                    chat_id=uid,
+                    text="✅ FacturaVoz ya está listo. ¡A facturar!",
+                    reply_markup=reply_markup
+                )
+                enviados += 1
+            except Exception:
+                pass
+        await update.message.reply_text(
+            f"✅ Mantenimiento desactivado. Notificaciones enviadas: {enviados}/{len(pendientes)}"
+        )
+
+async def handle_manos_a_la_obra(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """El usuario pulsa el botón tras volver de mantenimiento — arranca el flujo"""
+    query = update.callback_query
+    await query.answer()
+    await query.message.reply_text(
+        "¡Bienvenido! 🎙️ Mándame un audio describiendo el trabajo y te genero la factura."
+    )
+
 async def admin_reset(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Elimina el registro de un usuario — solo para el admin"""
     if update.effective_chat.id != ADMIN_CHAT_ID:
@@ -1874,15 +1930,20 @@ async def main():
     app = ApplicationBuilder().token(TELEGRAM_TOKEN).post_init(post_init).build()
 
     # Registra todos los handlers
+    app.add_handler(MessageHandler(filters.ALL, check_mantenimiento), group=-1)
+    app.add_handler(CommandHandler("admin_mantenimiento", check_mantenimiento), group=-1)
     app.add_handler(conv_handler)
     app.add_handler(CommandHandler("privacidad", privacidad))
     app.add_handler(CommandHandler("perfil", cmd_perfil))
     app.add_handler(CommandHandler("admin_reset", admin_reset))
+    app.add_handler(CommandHandler("admin_mantenimiento", admin_mantenimiento))
     app.add_handler(CallbackQueryHandler(
         handle_perfil_callbacks, pattern="^(perfil_|setiva_)"
     ))
+    app.add_handler(CallbackQueryHandler(handle_manos_a_la_obra, pattern="^manos_a_la_obra$"))
 
     init_db()
+    crear_tablas_mantenimiento()
 
     # Configura el webhook
     webhook_url = os.getenv("WEBHOOK_URL")
