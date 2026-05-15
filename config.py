@@ -44,6 +44,10 @@ def init_db():
                 ADD COLUMN IF NOT EXISTS actividad TEXT
             """)
             cur.execute("""
+                ALTER TABLE usuarios
+                ADD COLUMN IF NOT EXISTS pruebas_realizadas INTEGER DEFAULT 0
+            """)
+            cur.execute("""
                 CREATE TABLE IF NOT EXISTS logs (
                     id SERIAL PRIMARY KEY,
                     chat_id BIGINT,
@@ -193,6 +197,26 @@ def guardar_iva(chat_id, iva):
     with get_conn() as conn:
         with conn.cursor() as cur:
             cur.execute("UPDATE usuarios SET iva = %s WHERE chat_id = %s", (iva, chat_id))
+        conn.commit()
+
+def get_pruebas_realizadas(chat_id):
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute("SELECT pruebas_realizadas FROM usuarios WHERE chat_id = %s", (chat_id,))
+            row = cur.fetchone()
+            if not row:
+                return 0
+            return row[0] or 0
+
+def incrementar_prueba(chat_id):
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute("""
+                INSERT INTO usuarios (chat_id, pruebas_realizadas)
+                VALUES (%s, 1)
+                ON CONFLICT (chat_id) DO UPDATE
+                SET pruebas_realizadas = usuarios.pruebas_realizadas + 1
+            """, (chat_id,))
         conn.commit()
 
 def eliminar_usuario(chat_id):

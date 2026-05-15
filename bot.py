@@ -1,7 +1,7 @@
 import os
 import json
 from datetime import datetime
-from config import config_existe, guardar_config, cargar_config, get_siguiente_numero_factura, get_siguiente_numero_presupuesto, init_db, guardar_log, guardar_consentimiento, tiene_consentimiento, guardar_iban, guardar_iva, eliminar_usuario, eliminar_logs
+from config import config_existe, guardar_config, cargar_config, get_siguiente_numero_factura, get_siguiente_numero_presupuesto, init_db, guardar_log, guardar_consentimiento, tiene_consentimiento, guardar_iban, guardar_iva, eliminar_usuario, eliminar_logs, get_pruebas_realizadas, incrementar_prueba
 from holded import crear_factura
 from factura_pdf import generar_factura_pdf
 from openai import OpenAI
@@ -37,6 +37,8 @@ ESPERANDO_IBAN = 9
 EDITANDO_PERFIL_CAMPO = 11
 CONFIRMANDO_PERFIL_CAMPO = 12
 REGISTRO_ACTIVIDAD = 13
+ONBOARDING_PRUEBA = 14
+ONBOARDING_REGISTRO = 15
 
 def get_prompt_sistema():
     hoy = datetime.now().strftime("%d/%m/%Y")
@@ -200,36 +202,54 @@ async def handle_consentimiento(update: Update, context: ContextTypes.DEFAULT_TY
     )
     return ESPERANDO_AUDIO
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Comando /start — comprueba registro y consentimiento"""
     context.user_data.clear()
     chat_id = update.effective_chat.id
+    print(f"CHAT_ID: {chat_id}")
 
+    # Usuario ya registrado — flujo normal
     if config_existe(chat_id):
         config = cargar_config(chat_id)
         texto = (
             f"👋 Hola de nuevo, {config['nombre']}.\n\n"
-            "Envíame una nota de voz describiendo el trabajo y te generaré "
-            "una *factura* o *presupuesto* al instante.\n\n"
-            "Puedes decir por ejemplo:\n"
-            "• _'Hazme una factura para Juan García...'_\n"
-            "• _'Necesito un presupuesto para una reforma...'_\n\n"
-            "Intenta incluir:\n"
-            "• Nombre y dirección del cliente\n"
-            "• Trabajo realizado\n"
-            "• Materiales usados y su precio\n"
-            "• Horas trabajadas y precio por hora\n"
-            "• Desplazamiento si lo hay\n"
-            "• Fecha del trabajo"
+            "Envíame una nota de voz describiendo el trabajo."
         )
         await update.message.reply_text(texto, parse_mode="Markdown")
         return ESPERANDO_AUDIO
-    else:
+
+    # Usuario nuevo — onboarding
+    pruebas = get_pruebas_realizadas(chat_id)
+
+    if pruebas >= 3:
+        teclado = InlineKeyboardMarkup([[
+            InlineKeyboardButton(
+                "✅ Configurar mi perfil", callback_data="onboarding_registrar")
+        ]])
         await update.message.reply_text(
-            "👋 Hola, soy tu asistente de facturas.\n\n"
-            "Antes de empezar necesito configurar tus datos para las facturas.\n\n"
-            "¿Cuál es tu nombre completo o razón social?"
+            "Ya has visto cómo funciona FacturaVoz 😊\n\n"
+            "Para seguir creando facturas con tus datos reales "
+            "necesitas configurar tu perfil.\n"
+            "Son 2 minutos — solo una vez.",
+            parse_mode="Markdown",
+            reply_markup=teclado
         )
-        return REGISTRO_NOMBRE
+        return ONBOARDING_REGISTRO
+
+    # Primera vez o tiene pruebas disponibles
+    teclado = InlineKeyboardMarkup([[
+        InlineKeyboardButton(
+            "🎙️ Hacer mi prueba gratis", callback_data="onboarding_prueba")
+    ]])
+    await update.message.reply_text(
+        "👋 Bienvenido a *FacturaVoz*\n\n"
+        "Tu asistente personal para facturas y presupuestos.\n"
+        "Sin formularios. Sin Excel. Sin perder el tiempo.\n\n"
+        "Graba un audio describiendo un trabajo y en segundos "
+        "tienes el PDF listo para enviar. 📄\n\n"
+        "Hazte una prueba gratis — sin dar ningún dato todavía. 👇",
+        parse_mode="Markdown",
+        reply_markup=teclado
+    )
+    return ONBOARDING_PRUEBA
 
 async def registro_nombre(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Recibe el nombre del autónomo"""
@@ -473,20 +493,17 @@ async def handle_confirmacion(update: Update, context: ContextTypes.DEFAULT_TYPE
             )
             return ESPERANDO_CONFIRMACION
 
-        await generar_y_enviar_pdf(query, context)
-        return ESPERANDO_CONFIRMACION
+        return await generar_y_enviar_pdf(query, context)
 
     elif query.data == "iban_no":
         context.user_data["usar_iban"] = False
-        await generar_y_enviar_pdf(query, context)
-        return ESPERANDO_CONFIRMACION
+        return await generar_y_enviar_pdf(query, context)
 
     elif query.data == "iban_si":
         config = cargar_config(query.message.chat_id)
         if config.get("iban"):
             context.user_data["usar_iban"] = True
-            await generar_y_enviar_pdf(query, context)
-            return ESPERANDO_CONFIRMACION
+            return await generar_y_enviar_pdf(query, context)
         else:
             await query.message.reply_text(
                 "💳 Escribe tu IBAN:\n"
@@ -582,8 +599,7 @@ async def handle_confirmacion(update: Update, context: ContextTypes.DEFAULT_TYPE
             if m.get("precio") is None:
                 m["precio"] = "Pendiente"
         context.user_data["datos_factura"] = datos
-        await generar_y_enviar_pdf(query, context)
-        return ESPERANDO_CONFIRMACION
+        return await generar_y_enviar_pdf(query, context)
 
     elif query.data == "mat_blanco":
         datos = context.user_data.get("datos_factura")
@@ -591,8 +607,7 @@ async def handle_confirmacion(update: Update, context: ContextTypes.DEFAULT_TYPE
             if m.get("precio") is None:
                 m["precio"] = ""
         context.user_data["datos_factura"] = datos
-        await generar_y_enviar_pdf(query, context)
-        return ESPERANDO_CONFIRMACION
+        return await generar_y_enviar_pdf(query, context)
 
     elif query.data == "editar":
         await query.message.reply_text(
@@ -821,19 +836,28 @@ async def generar_y_enviar_pdf(query, context):
     tipo = datos.get("tipo", "factura")
     es_presupuesto = tipo == "presupuesto"
     chat_id = query.message.chat_id
+    modo_prueba = context.user_data.get("modo_prueba", False)
+    if modo_prueba:
+        incrementar_prueba(chat_id)
     config = cargar_config(chat_id)
 
-    if context.user_data.get("usar_iban") and config.get("iban"):
-        config["mostrar_iban"] = True
-    else:
-        config["mostrar_iban"] = False
+    if config:
+        if context.user_data.get("usar_iban") and config.get("iban"):
+            config["mostrar_iban"] = True
+        else:
+            config["mostrar_iban"] = False
 
     await query.message.reply_text(
         "⏳ Generando presupuesto PDF..." if es_presupuesto else "⏳ Generando factura PDF..."
     )
     numero = get_siguiente_numero_presupuesto(chat_id) if es_presupuesto else get_siguiente_numero_factura(chat_id)
-    iva_porcentaje = config.get("iva", 0.21)
-    nombre_pdf = generar_factura_pdf(datos, numero_factura=numero, info_autonomo=config, tipo=tipo, iva_porcentaje=iva_porcentaje)
+    nombre_pdf = generar_factura_pdf(
+        datos,
+        numero_factura=numero,
+        info_autonomo=cargar_config(chat_id) if not modo_prueba else None,
+        tipo=tipo,
+        es_prueba=modo_prueba
+    )
     prefijo = "presupuesto" if es_presupuesto else "factura"
     emoji = "📋" if es_presupuesto else "🎉"
     segundos = int(datetime.now().timestamp() - context.user_data.get("tiempo_inicio", datetime.now().timestamp()))
@@ -858,6 +882,31 @@ async def generar_y_enviar_pdf(query, context):
                     f"Manda un audio cuando quieras crear la siguiente.",
             parse_mode="Markdown"
         )
+    if modo_prueba:
+        pruebas_hechas = get_pruebas_realizadas(chat_id)
+        pruebas_restantes = 3 - pruebas_hechas
+        if pruebas_restantes > 0:
+            texto_pruebas = f"Te {'queda' if pruebas_restantes == 1 else 'quedan'} {pruebas_restantes} {'prueba' if pruebas_restantes == 1 else 'pruebas'} gratis."
+        else:
+            texto_pruebas = "Has usado todas tus pruebas gratis."
+
+        botones = [[InlineKeyboardButton(
+            "✅ Configurar mi perfil", callback_data="onboarding_registrar")]]
+        if pruebas_restantes > 0:
+            botones.append([InlineKeyboardButton(
+                "🔄 Hacer otra prueba", callback_data="onboarding_prueba")])
+
+        teclado_post_prueba = InlineKeyboardMarkup(botones)
+        await query.message.reply_text(
+            f"¿Ves qué fácil? 🎉\n\n"
+            f"Esto es lo que FacturaVoz hace cada vez.\n"
+            f"Para que la factura salga con tu nombre y NIF,\n"
+            f"configura tu perfil — solo una vez, 2 minutos.\n\n"
+            f"{texto_pruebas}",
+            parse_mode="Markdown",
+            reply_markup=teclado_post_prueba
+        )
+        return ONBOARDING_REGISTRO
     teclado_nuevo = InlineKeyboardMarkup([
         [
             InlineKeyboardButton("➕ Nueva factura", callback_data="nueva_factura"),
@@ -865,6 +914,7 @@ async def generar_y_enviar_pdf(query, context):
         ]
     ])
     await query.message.reply_text("¿Quieres crear otro documento?", reply_markup=teclado_nuevo)
+    return ESPERANDO_CONFIRMACION
 
 
 async def generar_y_enviar_pdf_texto(update, context):
@@ -1178,6 +1228,39 @@ async def handle_perfil_audio(update: Update, context: ContextTypes.DEFAULT_TYPE
     )
 
 
+async def handle_onboarding_prueba(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    await query.edit_message_text(
+        "🎙️ *Graba tu audio ahora*\n\n"
+        "Habla como si le explicaras el trabajo a un colega. "
+        "Por ejemplo:\n\n"
+        "_'Factura para Juan García, calle Mayor 5 Madrid, "
+        "he cambiado la caldera, materiales 320 euros, "
+        "4 horas a 35 euros, desplazamiento 20 euros'_\n\n"
+        "Incluye si puedes:\n"
+        "• Nombre y dirección del cliente\n"
+        "• Trabajo realizado\n"
+        "• Materiales y su precio\n"
+        "• Horas y precio por hora\n"
+        "• Desplazamiento\n\n"
+        "Si algo no sale bien no pasa nada — "
+        "podrás editar cualquier campo antes de confirmar. 👇",
+        parse_mode="Markdown"
+    )
+    context.user_data["modo_prueba"] = True
+    return ESPERANDO_AUDIO
+
+
+async def handle_onboarding_registro(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    await query.edit_message_text(
+        "¿Cuál es tu nombre completo o razón social?"
+    )
+    return REGISTRO_NOMBRE
+
+
 async def post_init(application):
     await application.bot.set_my_commands([
         ("start", "Iniciar o reiniciar el bot"),
@@ -1191,7 +1274,9 @@ async def post_init(application):
 conv_handler = ConversationHandler(
     entry_points=[
         CommandHandler("start", start),
-        MessageHandler(filters.VOICE, handle_voice)
+        MessageHandler(filters.VOICE, handle_voice),
+        CallbackQueryHandler(handle_onboarding_prueba, pattern="^onboarding_prueba$"),
+        CallbackQueryHandler(handle_onboarding_registro, pattern="^onboarding_registrar$"),
     ],
     states={
         REGISTRO_NOMBRE: [
@@ -1211,6 +1296,13 @@ conv_handler = ConversationHandler(
         ],
         REGISTRO_ACTIVIDAD: [
             CallbackQueryHandler(handle_actividad, pattern="^act_")
+        ],
+        ONBOARDING_PRUEBA: [
+            CallbackQueryHandler(handle_onboarding_prueba, pattern="^onboarding_prueba$"),
+            CallbackQueryHandler(handle_onboarding_registro, pattern="^onboarding_registrar$"),
+        ],
+        ONBOARDING_REGISTRO: [
+            CallbackQueryHandler(handle_onboarding_registro, pattern="^onboarding_registrar$"),
         ],
         ESPERANDO_AUDIO: [
             MessageHandler(filters.VOICE, handle_voice),

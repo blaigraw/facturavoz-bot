@@ -7,14 +7,20 @@ from reportlab.lib import colors
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
 from reportlab.lib.enums import TA_RIGHT, TA_CENTER, TA_LEFT
 
-def generar_factura_pdf(datos, numero_factura=None, info_autonomo=None, tipo="factura", iva_porcentaje=0.21):
-    """
-    Genera un PDF de factura con los datos estructurados del bot.
-    
-    datos: dict con los campos de la factura
-    numero_factura: string opcional, ej "2026-001"
-    info_autonomo: dict opcional con nombre, nif, direccion, telefono del autónomo
-    """
+def generar_factura_pdf(datos, numero_factura=None, info_autonomo=None, tipo="factura",
+                        iva_porcentaje=0.21, es_prueba=False):
+
+    if es_prueba or not info_autonomo:
+        info_autonomo = {
+            "nombre": "Antonio Martínez García",
+            "nif": "47382910B",
+            "direccion": "C/ de la Construcción, 14, 2ºA, 28045 Madrid",
+            "telefono": "612 345 678",
+            "email": "antonio.martinez@gmail.com",
+            "iban": None,
+            "mostrar_iban": False
+        }
+        numero_factura = "PRUEBA"
 
     # Nombre del archivo — incluye fecha y cliente para fácil identificación
     fecha_hoy = datetime.now().strftime("%Y%m%d")
@@ -24,16 +30,6 @@ def generar_factura_pdf(datos, numero_factura=None, info_autonomo=None, tipo="fa
     # Crea la carpeta si no existe
     os.makedirs("documentos", exist_ok=True)
     nombre_archivo = f"documentos/{prefijo_archivo}_{fecha_hoy}_{cliente_slug}.pdf"
-
-    # Datos del autónomo por defecto si no se pasan
-    if not info_autonomo:
-        info_autonomo = {
-            "nombre": "Tu Nombre Autónomo",
-            "nif": "00000000X",
-            "direccion": "Tu Dirección, Ciudad",
-            "telefono": "600 000 000",
-            "email": "tu@email.com"
-        }
 
     # Número de factura por defecto
     if not numero_factura:
@@ -318,7 +314,19 @@ def generar_factura_pdf(datos, numero_factura=None, info_autonomo=None, tipo="fa
             fontSize=9, textColor=colors.HexColor("#7F8C8D"), alignment=TA_CENTER)
     ))
 
-    # Genera el PDF
-    doc.build(elementos)
+    def marca_agua(canvas_obj, doc_obj):
+        if not es_prueba:
+            return
+        canvas_obj.saveState()
+        canvas_obj.setFont("Helvetica-Bold", 72)
+        canvas_obj.setFillColorRGB(0.85, 0.85, 0.85, alpha=0.3)
+        canvas_obj.translate(A4[0] / 2, A4[1] / 2)
+        canvas_obj.rotate(45)
+        canvas_obj.drawCentredString(0, 0, "PRUEBA")
+        canvas_obj.restoreState()
+
+    doc.build(elementos,
+              onFirstPage=marca_agua,
+              onLaterPages=marca_agua)
     print(f"PDF generado: {nombre_archivo}")
     return nombre_archivo
