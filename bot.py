@@ -543,6 +543,15 @@ Devuelve SOLO un JSON con el campo actualizado. Ejemplos por campo:
   "cambia todo: tubería PVC 12 euros, cinta teflón 2 euros" → reemplaza todos
   "un grifo 45, tubería 12, cinta 2" → reemplaza todos
 
+Además de interpretar el valor, aplica siempre estas correcciones:
+- Corrige errores ortográficos y de acentuación
+- Nombres propios con primera letra en mayúscula (personas, empresas, calles)
+- Marcas comerciales con su capitalización correcta (Roca, Grohe, Schneider, Legrand, Fermax, Baxi, Vaillant, etc.)
+- Direcciones en formato postal español: "Calle/Avenida/Plaza Nombre, número, piso, CP Municipio, Provincia"
+- Conceptos de trabajo: primera letra mayúscula, resto minúsculas, excepto nombres propios
+- Materiales: primera letra mayúscula, marcas comerciales respetadas
+- NIF/CIF: siempre en mayúsculas con formato correcto
+
 Devuelve SOLO el JSON, sin texto adicional.
 """
 
