@@ -62,7 +62,9 @@ Devuelve SOLO un JSON válido con estos campos exactos:
 Reglas:
 - Si un dato no aparece, ponlo como null
 - Ordena los datos y la informacion de la manera mas comoda para leer e introducir en una factura, con signos de puntuacion.
- Estructura la direccion como sereia la manera legal y aceptada por instituciones
+ Estructura la direccion como sereia la manera legal y aceptada por instituciones.
+ Usa abreviaciones estándar españolas: C/ para Calle, Avda. para Avenida, Pza. para Plaza, Ctra. para Carretera.
+ Ejemplo: "C/ Virgen del Pilar, 34, 3ºA, 28820 Coslada, Madrid"
 - El campo tipo solo puede ser "factura" o "presupuesto" o null
 - Si el audio menciona palabras como "presupuesto", "precio aproximado", "cuánto costaría" → tipo: "presupuesto"
 - Si el audio menciona "factura", "cobrar", "trabajo terminado" → tipo: "factura"
@@ -537,7 +539,7 @@ Además de interpretar el valor, aplica siempre estas correcciones:
 - Corrige errores ortográficos y de acentuación
 - Nombres propios con primera letra en mayúscula (personas, empresas, calles)
 - Marcas comerciales con su capitalización correcta (Roca, Grohe, Schneider, Legrand, Fermax, Baxi, Vaillant, etc.)
-- Direcciones en formato postal español: "Calle/Avenida/Plaza Nombre, número, piso, CP Municipio, Provincia". Solo incluye el código postal si estás seguro al 100%. Si hay duda, omítelo y deja la dirección sin CP.
+- Direcciones en formato postal español: "Calle/Avenida/Plaza Nombre, número, piso, CP Municipio, Provincia". Solo incluye el código postal si estás seguro al 100%. Si hay duda, omítelo y deja la dirección sin CP. Usa abreviaciones estándar españolas: C/ para Calle, Avda. para Avenida, Pza. para Plaza, Ctra. para Carretera. Ejemplo: "C/ Virgen del Pilar, 34, 3ºA, 28820 Coslada, Madrid"
 - Conceptos de trabajo: primera letra mayúscula, resto minúsculas, excepto nombres propios
 - Materiales: primera letra mayúscula, marcas comerciales respetadas
 - NIF/CIF: siempre en mayúsculas con formato correcto
@@ -684,7 +686,8 @@ async def generar_y_enviar_pdf(query, context):
         await query.message.reply_document(
             document=pdf,
             filename=f"{prefijo}_{numero}.pdf",
-            caption=f"{emoji} {prefijo.capitalize()} *{numero}* generada correctamente.",
+            caption=f"{emoji} {prefijo.capitalize()} *{numero}* generada.\n"
+                    f"Manda un audio cuando quieras crear la siguiente.",
             parse_mode="Markdown"
         )
     teclado_nuevo = InlineKeyboardMarkup([
@@ -718,7 +721,8 @@ async def generar_y_enviar_pdf_texto(update, context):
         await update.message.reply_document(
             document=pdf,
             filename=f"{prefijo}_{numero}.pdf",
-            caption=f"{emoji} {prefijo.capitalize()} *{numero}* generada correctamente.",
+            caption=f"{emoji} {prefijo.capitalize()} *{numero}* generada.\n"
+                    f"Manda un audio cuando quieras crear la siguiente.",
             parse_mode="Markdown"
         )
     teclado_nuevo = InlineKeyboardMarkup([

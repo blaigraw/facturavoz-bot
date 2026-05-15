@@ -282,8 +282,8 @@ def generar_factura_pdf(datos, numero_factura=None, info_autonomo=None, tipo="fa
         elementos.append(Paragraph(
             f"Forma de pago — Transferencia bancaria: {info_autonomo['iban']}",
             ParagraphStyle("iban_pie", parent=styles["Normal"],
-                fontSize=9, textColor=colors.HexColor("#2C3E50"),
-                alignment=TA_CENTER)
+                fontSize=10, textColor=colors.HexColor("#2C3E50"),
+                alignment=TA_LEFT)
         ))
         elementos.append(Spacer(1, 0.2*cm))
     elementos.append(Paragraph(
