@@ -744,8 +744,6 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
         datos = json.loads(contenido)
         config_usuario = cargar_config(update.message.chat_id)
         precio_hora_perfil = config_usuario.get("precio_hora") if config_usuario else None
-        print(f"[DEBUG precio_hora] chat_id={update.message.chat_id} config={config_usuario} precio_hora_perfil={precio_hora_perfil} datos_precio_hora={datos.get('precio_hora')}")
-
         if datos.get("precio_hora") is None and precio_hora_perfil:
             datos["precio_hora"] = precio_hora_perfil
             datos["precio_hora_es_default"] = True
