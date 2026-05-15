@@ -52,6 +52,10 @@ def init_db():
                 ADD COLUMN IF NOT EXISTS precio_hora FLOAT DEFAULT NULL
             """)
             cur.execute("""
+                ALTER TABLE usuarios
+                ADD COLUMN IF NOT EXISTS mostrar_precio_hora BOOLEAN DEFAULT TRUE
+            """)
+            cur.execute("""
                 CREATE TABLE IF NOT EXISTS logs (
                     id SERIAL PRIMARY KEY,
                     chat_id BIGINT,
@@ -81,8 +85,8 @@ def guardar_config(chat_id, datos):
     with get_conn() as conn:
         with conn.cursor() as cur:
             cur.execute("""
-                INSERT INTO usuarios (chat_id, nombre, nif, direccion, telefono, email, iban, iva, actividad, precio_hora)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                INSERT INTO usuarios (chat_id, nombre, nif, direccion, telefono, email, iban, iva, actividad, precio_hora, mostrar_precio_hora)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 ON CONFLICT (chat_id) DO UPDATE SET
                     nombre = EXCLUDED.nombre,
                     nif = EXCLUDED.nif,
@@ -92,14 +96,15 @@ def guardar_config(chat_id, datos):
                     iban = EXCLUDED.iban,
                     iva = EXCLUDED.iva,
                     actividad = EXCLUDED.actividad,
-                    precio_hora = EXCLUDED.precio_hora
-            """, (chat_id, datos["nombre"], datos["nif"], datos["direccion"], datos["telefono"], datos["email"], datos.get("iban"), datos.get("iva", 0.21), datos.get("actividad"), datos.get("precio_hora")))
+                    precio_hora = EXCLUDED.precio_hora,
+                    mostrar_precio_hora = EXCLUDED.mostrar_precio_hora
+            """, (chat_id, datos["nombre"], datos["nif"], datos["direccion"], datos["telefono"], datos["email"], datos.get("iban"), datos.get("iva", 0.21), datos.get("actividad"), datos.get("precio_hora"), datos.get("mostrar_precio_hora", True)))
         conn.commit()
 
 def cargar_config(chat_id):
     with get_conn() as conn:
         with conn.cursor() as cur:
-            cur.execute("SELECT nombre, nif, direccion, telefono, email, iban, iva, actividad, precio_hora FROM usuarios WHERE chat_id = %s", (chat_id,))
+            cur.execute("SELECT nombre, nif, direccion, telefono, email, iban, iva, actividad, precio_hora, mostrar_precio_hora FROM usuarios WHERE chat_id = %s", (chat_id,))
             row = cur.fetchone()
             if not row:
                 return None
@@ -112,7 +117,8 @@ def cargar_config(chat_id):
                 "iban": row[5],
                 "iva": row[6],
                 "actividad": row[7],
-                "precio_hora": row[8]
+                "precio_hora": row[8],
+                "mostrar_precio_hora": row[9] if row[9] is not None else True
             }
 
 def get_siguiente_numero_factura(chat_id):

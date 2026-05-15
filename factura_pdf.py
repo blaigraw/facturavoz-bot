@@ -216,17 +216,29 @@ def generar_factura_pdf(datos, numero_factura=None, info_autonomo=None, tipo="fa
             ])
 
     # Añade mano de obra
+    mostrar_precio_hora = True
+    if info_autonomo:
+        mostrar_precio_hora = info_autonomo.get("mostrar_precio_hora", True)
+
     if datos.get("horas") and datos.get("precio_hora"):
         horas = datos["horas"]
         precio_hora = datos["precio_hora"]
         importe_horas = horas * precio_hora
         subtotal += importe_horas
-        filas.append([
-            Paragraph(f"Mano de obra — {datos.get('concepto', '')}", estilo_normal),
-            Paragraph(f"{horas}h", estilo_derecha),
-            Paragraph(f"{precio_hora:.2f}€/h", estilo_derecha),
-            Paragraph(f"{importe_horas:.2f}€", estilo_derecha),
-        ])
+        if mostrar_precio_hora:
+            filas.append([
+                Paragraph(f"Mano de obra — {datos.get('concepto', '')}", estilo_normal),
+                Paragraph(f"{horas}h", estilo_derecha),
+                Paragraph(f"{precio_hora:.2f}€/h", estilo_derecha),
+                Paragraph(f"{importe_horas:.2f}€", estilo_derecha),
+            ])
+        else:
+            filas.append([
+                Paragraph(f"Mano de obra — {datos.get('concepto', '')}", estilo_normal),
+                Paragraph("", estilo_derecha),
+                Paragraph("", estilo_derecha),
+                Paragraph(f"{importe_horas:.2f}€", estilo_derecha),
+            ])
 
     # Añade desplazamiento
     if datos.get("desplazamiento") and datos["desplazamiento"] > 0:

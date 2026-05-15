@@ -44,6 +44,7 @@ REGISTRO_PRECIO_HORA = 17
 REGISTRO_ACTIVIDAD_OTRO = 18
 REGISTRO_NUMERO_FACTURA = 19
 REGISTRO_NUMERO_PRESUPUESTO = 20
+REGISTRO_MOSTRAR_PRECIO_HORA = 21
 
 TECLADO_CONFIRMAR = InlineKeyboardMarkup([
     [
@@ -56,6 +57,13 @@ TECLADO_PRECIO_HORA = InlineKeyboardMarkup([
     [
         InlineKeyboardButton("✅ Sí, añadir precio/hora", callback_data="reg_precio_si"),
         InlineKeyboardButton("➡️ Saltar por ahora", callback_data="reg_precio_no"),
+    ]
+])
+
+TECLADO_MOSTRAR_PRECIO_HORA = InlineKeyboardMarkup([
+    [
+        InlineKeyboardButton("✅ Sí, mostrarlo", callback_data="reg_mostrar_precio_si"),
+        InlineKeyboardButton("🔒 No, solo el total", callback_data="reg_mostrar_precio_no"),
     ]
 ])
 
@@ -488,25 +496,15 @@ async def handle_confirmacion_registro(update: Update, context: ContextTypes.DEF
         return REGISTRO_PRECIO_HORA
 
     if campo == "precio_hora":
-        teclado_actividad = InlineKeyboardMarkup([
-            [
-                InlineKeyboardButton("🔧 Fontanero", callback_data="act_fontanero"),
-                InlineKeyboardButton("⚡ Electricista", callback_data="act_electricista"),
-            ],
-            [
-                InlineKeyboardButton("🏗️ Reformas", callback_data="act_reformas"),
-                InlineKeyboardButton("🎨 Pintor", callback_data="act_pintor"),
-            ],
-            [
-                InlineKeyboardButton("🪚 Carpintero", callback_data="act_carpintero"),
-                InlineKeyboardButton("❓ Otro", callback_data="act_otro"),
-            ]
-        ])
         await query.edit_message_text(
-            "¿Cuál es tu actividad principal?",
-            reply_markup=teclado_actividad
+            "🔒 *¿Quieres que aparezca tu precio por hora en las facturas?*\n\n"
+            "Si dices que no, el bot calculará el total de mano de obra pero no mostrará "
+            "la tarifa ni las horas desglosadas.\n\n"
+            "Puedes cambiarlo cuando quieras desde /perfil.",
+            reply_markup=TECLADO_MOSTRAR_PRECIO_HORA,
+            parse_mode="Markdown"
         )
-        return REGISTRO_ACTIVIDAD
+        return REGISTRO_MOSTRAR_PRECIO_HORA
 
     if campo == "numero_presupuesto":
         return await _guardar_registro_completo(query, context)
@@ -567,6 +565,34 @@ async def registro_precio_hora(update: Update, context: ContextTypes.DEFAULT_TYP
         )
         return REGISTRO_PRECIO_HORA
     return await mostrar_confirmacion_campo(update, context, "precio_hora", f"{valor} €/hora")
+
+
+async def handle_mostrar_precio_hora_registro(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    if query.data == "reg_mostrar_precio_si":
+        context.user_data["reg_mostrar_precio_hora"] = True
+    else:
+        context.user_data["reg_mostrar_precio_hora"] = False
+    teclado_actividad = InlineKeyboardMarkup([
+        [
+            InlineKeyboardButton("🔧 Fontanero", callback_data="act_fontanero"),
+            InlineKeyboardButton("⚡ Electricista", callback_data="act_electricista"),
+        ],
+        [
+            InlineKeyboardButton("🏗️ Reformas", callback_data="act_reformas"),
+            InlineKeyboardButton("🎨 Pintor", callback_data="act_pintor"),
+        ],
+        [
+            InlineKeyboardButton("🪚 Carpintero", callback_data="act_carpintero"),
+            InlineKeyboardButton("❓ Otro", callback_data="act_otro"),
+        ]
+    ])
+    await query.edit_message_text(
+        "¿Cuál es tu actividad principal?",
+        reply_markup=teclado_actividad
+    )
+    return REGISTRO_ACTIVIDAD
 
 
 async def handle_actividad(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -665,6 +691,7 @@ async def _guardar_registro_completo(query, context):
         "telefono": context.user_data["reg_telefono"],
         "email": context.user_data["reg_email"],
         "actividad": context.user_data["reg_actividad"],
+        "mostrar_precio_hora": context.user_data.get("reg_mostrar_precio_hora", True),
     }
     if precio_hora_raw:
         config["precio_hora"] = float(precio_hora_raw)
@@ -1697,6 +1724,9 @@ conv_handler = ConversationHandler(
             CallbackQueryHandler(handle_precio_hora_registro, pattern="^reg_precio_"),
             MessageHandler(filters.TEXT & ~filters.COMMAND, registro_precio_hora),
             MessageHandler(filters.VOICE, registro_precio_hora),
+        ],
+        REGISTRO_MOSTRAR_PRECIO_HORA: [
+            CallbackQueryHandler(handle_mostrar_precio_hora_registro, pattern="^reg_mostrar_precio_"),
         ],
         REGISTRO_ACTIVIDAD_OTRO: [
             MessageHandler(filters.TEXT & ~filters.COMMAND, registro_actividad_otro),
