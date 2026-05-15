@@ -694,9 +694,13 @@ async def _guardar_registro_completo(query, context):
         f"{precio_linea}"
         f"🧾 *Última factura:* {numero_factura_inicial}\n"
         f"📋 *Último presupuesto:* {numero_presupuesto_inicial}\n\n"
-        f"💡 Tu IVA está configurado al 21%. Puedes cambiarlo en /perfil.\n\n"
-        f"Ya puedes empezar. Envíame una nota de voz describiendo el trabajo.",
+        f"💡 Tu IVA está configurado al 21%. Puedes cambiarlo en /perfil.",
         parse_mode="Markdown"
+    )
+    await asyncio.sleep(0.3)
+    await context.bot.send_message(
+        chat_id=query.message.chat_id,
+        text="Ya puedes empezar. Envíame una nota de voz para generar tu primera factura. 🎙️"
     )
     context.user_data["modo_prueba"] = False
     return ESPERANDO_AUDIO
@@ -740,6 +744,7 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
         datos = json.loads(contenido)
         config_usuario = cargar_config(update.message.chat_id)
         precio_hora_perfil = config_usuario.get("precio_hora") if config_usuario else None
+        print(f"[DEBUG precio_hora] chat_id={update.message.chat_id} config={config_usuario} precio_hora_perfil={precio_hora_perfil} datos_precio_hora={datos.get('precio_hora')}")
 
         if datos.get("precio_hora") is None and precio_hora_perfil:
             datos["precio_hora"] = precio_hora_perfil
