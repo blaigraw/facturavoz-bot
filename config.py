@@ -36,6 +36,10 @@ def init_db():
                 ADD COLUMN IF NOT EXISTS iban TEXT
             """)
             cur.execute("""
+                ALTER TABLE usuarios
+                ADD COLUMN IF NOT EXISTS iva FLOAT DEFAULT 0.21
+            """)
+            cur.execute("""
                 CREATE TABLE IF NOT EXISTS logs (
                     id SERIAL PRIMARY KEY,
                     chat_id BIGINT,
@@ -65,22 +69,23 @@ def guardar_config(chat_id, datos):
     with get_conn() as conn:
         with conn.cursor() as cur:
             cur.execute("""
-                INSERT INTO usuarios (chat_id, nombre, nif, direccion, telefono, email, iban)
-                VALUES (%s, %s, %s, %s, %s, %s, %s)
+                INSERT INTO usuarios (chat_id, nombre, nif, direccion, telefono, email, iban, iva)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
                 ON CONFLICT (chat_id) DO UPDATE SET
                     nombre = EXCLUDED.nombre,
                     nif = EXCLUDED.nif,
                     direccion = EXCLUDED.direccion,
                     telefono = EXCLUDED.telefono,
                     email = EXCLUDED.email,
-                    iban = EXCLUDED.iban
-            """, (chat_id, datos["nombre"], datos["nif"], datos["direccion"], datos["telefono"], datos["email"], datos.get("iban")))
+                    iban = EXCLUDED.iban,
+                    iva = EXCLUDED.iva
+            """, (chat_id, datos["nombre"], datos["nif"], datos["direccion"], datos["telefono"], datos["email"], datos.get("iban"), datos.get("iva", 0.21)))
         conn.commit()
 
 def cargar_config(chat_id):
     with get_conn() as conn:
         with conn.cursor() as cur:
-            cur.execute("SELECT nombre, nif, direccion, telefono, email, iban FROM usuarios WHERE chat_id = %s", (chat_id,))
+            cur.execute("SELECT nombre, nif, direccion, telefono, email, iban, iva FROM usuarios WHERE chat_id = %s", (chat_id,))
             row = cur.fetchone()
             if not row:
                 return None
@@ -90,7 +95,8 @@ def cargar_config(chat_id):
                 "direccion": row[2],
                 "telefono": row[3],
                 "email": row[4],
-                "iban": row[5]
+                "iban": row[5],
+                "iva": row[6]
             }
 
 def get_siguiente_numero_factura(chat_id):
@@ -174,4 +180,11 @@ def guardar_iban(chat_id, iban):
             cur.execute("""
                 UPDATE usuarios SET iban = %s WHERE chat_id = %s
             """, (iban, chat_id))
+        conn.commit()
+
+def guardar_iva(chat_id, iva):
+    """Guarda o actualiza el IVA habitual del autónomo"""
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute("UPDATE usuarios SET iva = %s WHERE chat_id = %s", (iva, chat_id))
         conn.commit()

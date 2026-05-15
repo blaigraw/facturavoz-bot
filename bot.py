@@ -1,7 +1,7 @@
 import os
 import json
 from datetime import datetime
-from config import config_existe, guardar_config, cargar_config, get_siguiente_numero_factura, get_siguiente_numero_presupuesto, init_db, guardar_log, guardar_consentimiento, tiene_consentimiento, guardar_iban
+from config import config_existe, guardar_config, cargar_config, get_siguiente_numero_factura, get_siguiente_numero_presupuesto, init_db, guardar_log, guardar_consentimiento, tiene_consentimiento, guardar_iban, guardar_iva
 from holded import crear_factura
 from factura_pdf import generar_factura_pdf
 from openai import OpenAI
@@ -78,7 +78,7 @@ Reglas:
 - Devuelve SOLO el JSON, sin texto adicional ni bloques de código
 """
 
-def construir_resumen(datos):
+def construir_resumen(datos, iva_porcentaje=0.21):
     """Construye el texto del resumen — factura o presupuesto"""
     total_horas = (datos["horas"] or 0) * (datos["precio_hora"] or 0)
     tipo = datos.get("tipo", "factura")
@@ -110,11 +110,13 @@ def construir_resumen(datos):
         validez = datos.get("validez_dias") or 30
         resumen += f"⏳ *Validez:* {validez} días\n"
 
+    iva_etiqueta = f"{int(iva_porcentaje * 100)}%" if iva_porcentaje > 0 else "Exento"
     resumen += (
         f"\n💰 *Subtotal: {datos['total'] or 0}€*\n"
-        f"🧾 *IVA (21%): {round((datos['total'] or 0) * 0.21, 2)}€*\n"
-        f"💵 *TOTAL: {round((datos['total'] or 0) * 1.21, 2)}€*\n\n"        f"¿Es correcto?"
-            )
+        f"🧾 *IVA ({iva_etiqueta}): {round((datos['total'] or 0) * iva_porcentaje, 2)}€*\n"
+        f"💵 *TOTAL: {round((datos['total'] or 0) * (1 + iva_porcentaje), 2)}€*\n\n"
+        f"¿Es correcto?"
+    )
     return resumen
 
 def construir_teclado_confirmacion(tipo="factura"):
@@ -298,7 +300,9 @@ async def registro_email(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "• Materiales usados y su precio\n"
         "• Horas trabajadas y precio por hora\n"
         "• Desplazamiento si lo hay\n"
-        "• Fecha del trabajo",
+        "• Fecha del trabajo\n\n"
+        "💡 Tu IVA habitual está configurado al 21%. "
+        "Puedes cambiarlo en cualquier momento con /perfil.",
         parse_mode="Markdown"
     )
     return ESPERANDO_AUDIO
@@ -416,7 +420,6 @@ async def handle_confirmacion(update: Update, context: ContextTypes.DEFAULT_TYPE
         tipo = datos.get("tipo", "factura")
         es_presupuesto = tipo == "presupuesto"
 
-        # Solo en facturas, preguntar si quieren incluir IBAN
         if tipo == "factura":
             config = cargar_config(query.message.chat_id)
             teclado_iban = InlineKeyboardMarkup([
@@ -433,9 +436,9 @@ async def handle_confirmacion(update: Update, context: ContextTypes.DEFAULT_TYPE
             )
             return ESPERANDO_CONFIRMACION
 
-        # Los presupuestos se generan directamente
         await generar_y_enviar_pdf(query, context)
         return ESPERANDO_CONFIRMACION
+
     elif query.data == "iban_no":
         context.user_data["usar_iban"] = False
         await generar_y_enviar_pdf(query, context)
@@ -665,7 +668,8 @@ async def generar_y_enviar_pdf(query, context):
         "⏳ Generando presupuesto PDF..." if es_presupuesto else "⏳ Generando factura PDF..."
     )
     numero = get_siguiente_numero_presupuesto(chat_id) if es_presupuesto else get_siguiente_numero_factura(chat_id)
-    nombre_pdf = generar_factura_pdf(datos, numero_factura=numero, info_autonomo=config, tipo=tipo)
+    iva_porcentaje = config.get("iva", 0.21)
+    nombre_pdf = generar_factura_pdf(datos, numero_factura=numero, info_autonomo=config, tipo=tipo, iva_porcentaje=iva_porcentaje)
     prefijo = "presupuesto" if es_presupuesto else "factura"
     emoji = "📋" if es_presupuesto else "🎉"
     segundos = int(datetime.now().timestamp() - context.user_data.get("tiempo_inicio", datetime.now().timestamp()))
@@ -714,7 +718,8 @@ async def generar_y_enviar_pdf_texto(update, context):
         "⏳ Generando presupuesto PDF..." if es_presupuesto else "⏳ Generando factura PDF..."
     )
     numero = get_siguiente_numero_presupuesto(chat_id) if es_presupuesto else get_siguiente_numero_factura(chat_id)
-    nombre_pdf = generar_factura_pdf(datos, numero_factura=numero, info_autonomo=config, tipo=tipo)
+    iva_porcentaje = config.get("iva", 0.21)
+    nombre_pdf = generar_factura_pdf(datos, numero_factura=numero, info_autonomo=config, tipo=tipo, iva_porcentaje=iva_porcentaje)
     prefijo = "presupuesto" if es_presupuesto else "factura"
     emoji = "📋" if es_presupuesto else "🎉"
     with open(nombre_pdf, "rb") as pdf:
@@ -773,6 +778,8 @@ async def cmd_perfil(update: Update, _context: ContextTypes.DEFAULT_TYPE):
     iban_texto = config.get("iban") or "No configurado"
     if config.get("iban") and len(config["iban"]) > 8:
         iban_texto = config["iban"][:8] + "..."
+    iva_actual = config.get("iva", 0.21)
+    iva_texto = "21% General" if iva_actual == 0.21 else "10% Reducido" if iva_actual == 0.10 else "Sin IVA"
     texto = (
         f"👤 *Tu perfil:*\n\n"
         f"*Nombre:* {config['nombre']}\n"
@@ -780,7 +787,8 @@ async def cmd_perfil(update: Update, _context: ContextTypes.DEFAULT_TYPE):
         f"*Dirección:* {config['direccion']}\n"
         f"*Teléfono:* {config['telefono']}\n"
         f"*Email:* {config['email']}\n"
-        f"*IBAN:* {iban_texto}\n\n"
+        f"*IBAN:* {iban_texto}\n"
+        f"*IVA habitual:* {iva_texto}\n\n"
         f"Pulsa un campo para editarlo:"
     )
     teclado = InlineKeyboardMarkup([
@@ -795,9 +803,37 @@ async def cmd_perfil(update: Update, _context: ContextTypes.DEFAULT_TYPE):
         [
             InlineKeyboardButton("📧 Email", callback_data="perfil_email"),
             InlineKeyboardButton("💳 IBAN", callback_data="perfil_iban"),
+        ],
+        [
+            InlineKeyboardButton("🧾 IVA", callback_data="perfil_iva"),
         ]
     ])
     await update.message.reply_text(texto, parse_mode="Markdown", reply_markup=teclado)
+
+
+async def handle_perfil_callbacks(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Gestiona los callbacks del comando /perfil y edición de IVA"""
+    query = update.callback_query
+    await query.answer()
+
+    if query.data == "perfil_iva":
+        teclado_iva = InlineKeyboardMarkup([
+            [
+                InlineKeyboardButton("21% General", callback_data="setiva_21"),
+                InlineKeyboardButton("10% Reducido", callback_data="setiva_10"),
+                InlineKeyboardButton("Sin IVA", callback_data="setiva_0")
+            ]
+        ])
+        await query.message.reply_text(
+            "🧾 Selecciona tu IVA habitual:",
+            reply_markup=teclado_iva
+        )
+
+    elif query.data in ("setiva_21", "setiva_10", "setiva_0"):
+        porcentaje = {"setiva_21": 0.21, "setiva_10": 0.10, "setiva_0": 0.0}[query.data]
+        etiqueta = {"setiva_21": "21% General", "setiva_10": "10% Reducido", "setiva_0": "Sin IVA"}[query.data]
+        guardar_iva(query.message.chat_id, porcentaje)
+        await query.message.reply_text(f"✅ IVA actualizado a {etiqueta}.")
 
 
 async def post_init(application):
@@ -864,4 +900,5 @@ init_db()
 print("Bot activo...")
 app.add_handler(CommandHandler("privacidad", privacidad))
 app.add_handler(CommandHandler("perfil", cmd_perfil))
+app.add_handler(CallbackQueryHandler(handle_perfil_callbacks, pattern="^(perfil_|setiva_)"))
 app.run_polling()
