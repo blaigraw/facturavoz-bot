@@ -249,6 +249,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         parse_mode="Markdown",
         reply_markup=teclado
     )
+    await asyncio.sleep(0.3)
     return ONBOARDING_PRUEBA
 
 async def registro_nombre(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -883,30 +884,20 @@ async def generar_y_enviar_pdf(query, context):
             parse_mode="Markdown"
         )
     if modo_prueba:
-        pruebas_hechas = get_pruebas_realizadas(chat_id)
-        pruebas_restantes = 3 - pruebas_hechas
-        if pruebas_restantes > 0:
-            texto_pruebas = f"Te {'queda' if pruebas_restantes == 1 else 'quedan'} {pruebas_restantes} {'prueba' if pruebas_restantes == 1 else 'pruebas'} gratis."
-        else:
-            texto_pruebas = "Has usado todas tus pruebas gratis."
-
-        botones = [[InlineKeyboardButton(
-            "✅ Configurar mi perfil", callback_data="onboarding_registrar")]]
-        if pruebas_restantes > 0:
-            botones.append([InlineKeyboardButton(
-                "🔄 Hacer otra prueba", callback_data="onboarding_prueba")])
-
-        teclado_post_prueba = InlineKeyboardMarkup(botones)
+        teclado_post_prueba = InlineKeyboardMarkup([
+            [InlineKeyboardButton(
+                "✅ Configurar mi perfil", callback_data="onboarding_registrar")],
+            [InlineKeyboardButton(
+                "🔄 Hacer otra prueba", callback_data="onboarding_prueba")]
+        ])
         await query.message.reply_text(
-            f"¿Ves qué fácil? 🎉\n\n"
-            f"Esto es lo que FacturaVoz hace cada vez.\n"
-            f"Para que la factura salga con tu nombre y NIF,\n"
-            f"configura tu perfil — solo una vez, 2 minutos.\n\n"
-            f"{texto_pruebas}",
+            "¿Ves qué fácil? 🎉\n\n"
+            "FacturaVoz está en beta — es completamente gratis.\n"
+            "Configura tu perfil en 2 minutos y empieza\n"
+            "a generar facturas reales con tus datos. 👇",
             parse_mode="Markdown",
             reply_markup=teclado_post_prueba
         )
-        print(f"DEBUG estado post-prueba — devolviendo ONBOARDING_REGISTRO")
         return ONBOARDING_REGISTRO
     teclado_nuevo = InlineKeyboardMarkup([
         [
@@ -1251,6 +1242,7 @@ async def handle_onboarding_prueba(update: Update, context: ContextTypes.DEFAULT
         parse_mode="Markdown"
     )
     context.user_data["modo_prueba"] = True
+    await asyncio.sleep(0.5)
     return ESPERANDO_AUDIO
 
 
