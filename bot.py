@@ -635,9 +635,7 @@ async def _guardar_registro_completo(query, context):
         f"Ya puedes empezar. Envíame una nota de voz describiendo el trabajo.",
         parse_mode="Markdown"
     )
-    print(f"[DEBUG] modo_prueba antes: {context.user_data.get('modo_prueba')}")
     context.user_data["modo_prueba"] = False
-    print(f"[DEBUG] modo_prueba después: {context.user_data.get('modo_prueba')}")
     return ESPERANDO_AUDIO
 
 async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -658,7 +656,6 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
 
     texto = transcription.text
-    print(f"Transcripción: {texto}")
     await update.message.reply_text(
         f"📝 He entendido:\n_{texto}_",
         parse_mode="Markdown"
