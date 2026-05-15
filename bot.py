@@ -1,7 +1,7 @@
 import os
 import json
 from datetime import datetime
-from config import config_existe, guardar_config, cargar_config, get_siguiente_numero_factura, get_siguiente_numero_presupuesto, init_db, guardar_log, guardar_consentimiento, tiene_consentimiento, guardar_iban, guardar_iva, eliminar_usuario, eliminar_logs, get_pruebas_realizadas, incrementar_prueba, guardar_numero_inicial_factura, guardar_numero_inicial_presupuesto
+from config import config_existe, guardar_config, cargar_config, get_siguiente_numero_factura, get_siguiente_numero_presupuesto, init_db, guardar_log, guardar_consentimiento, tiene_consentimiento, guardar_iban, guardar_iva, eliminar_usuario, eliminar_logs, get_pruebas_realizadas, incrementar_prueba, guardar_numero_inicial_factura, guardar_numero_inicial_presupuesto, get_user_exists
 from holded import crear_factura
 from factura_pdf import generar_factura_pdf
 from openai import OpenAI
@@ -1407,11 +1407,17 @@ async def admin_reset(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text("❌ ID inválido.")
             return
 
+    if not get_user_exists(target_id):
+        await update.message.reply_text(
+            f"⚠️ El usuario {target_id} no existe en la base de datos."
+        )
+        return
+
     eliminar_logs(target_id)
     eliminar_usuario(target_id)
 
     await update.message.reply_text(
-        f"✅ Usuario {target_id} eliminado de la base de datos."
+        f"✅ Usuario {target_id} eliminado."
     )
 
 

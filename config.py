@@ -248,6 +248,12 @@ def incrementar_prueba(chat_id):
             """, (chat_id,))
         conn.commit()
 
+def get_user_exists(chat_id):
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute("SELECT 1 FROM usuarios WHERE chat_id = %s", (chat_id,))
+            return cur.fetchone() is not None
+
 def eliminar_usuario(chat_id):
     with get_conn() as conn:
         with conn.cursor() as cur:
