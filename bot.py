@@ -54,6 +54,7 @@ Devuelve SOLO un JSON válido con estos campos exactos:
     "cliente_nombre": "nombre de la persona o empresa",
     "cliente_direccion": "dirección completa del cliente",
     "concepto": "descripción del trabajo realizado",
+    "observaciones": null,
     "materiales": [{{"descripcion": "...", "precio": 0.00}}],
     "horas": 0,
     "precio_hora": 0.00,
@@ -79,6 +80,7 @@ Reglas:
 - El total es la suma de materiales + (horas x precio_hora) + desplazamiento
 - La fecha de hoy es {hoy} — úsala si no se menciona otra fecha, si se menciona una fecha concreta calcula la fecha exacta en formato DD/MM/YYYY partiendo de que hoy es {hoy}
 - Si se menciona una fecha relativa como 'ayer', 'la semana pasada', 'el lunes pasado', calcula la fecha exacta en formato DD/MM/YYYY partiendo de que hoy es {hoy}
+- "observaciones": extrae este campo SOLO si el autónomo menciona explícitamente algo para anotar: pagos en efectivo, garantías, certificados, condiciones especiales, notas para el cliente. Frases como "anota que", "para que conste", "el cliente pagó en efectivo", "garantía de X meses". Si no hay nada explícito, ponlo como null. Máximo 2 líneas de texto.
 - Devuelve SOLO el JSON, sin texto adicional ni bloques de código
 """
 
@@ -98,6 +100,9 @@ def construir_resumen(datos, iva_porcentaje=0.21):
         f"📍 *Dirección:* {datos.get('cliente_direccion') or 'No especificada'}\n"
         f"🔧 *Trabajo:* {datos['concepto'] or 'No especificado'}\n"
     )
+
+    if datos.get("observaciones"):
+        resumen += f"📝 *Observaciones:* {datos['observaciones']}\n"
 
     if datos["materiales"]:
         resumen += "\n📦 *Materiales:*\n"
@@ -165,7 +170,10 @@ def construir_teclado_campos():
         [
             InlineKeyboardButton("📅 Fecha", callback_data="campo_fecha"),
             InlineKeyboardButton("💵 Total", callback_data="campo_total")
-        ]
+        ],
+        [
+            InlineKeyboardButton("📝 Observaciones", callback_data="campo_observaciones"),
+        ],
      ])
 async def pedir_consentimiento(update: Update):
     """Muestra el mensaje de consentimiento RGPD"""
@@ -505,10 +513,22 @@ async def handle_confirmacion(update: Update, context: ContextTypes.DEFAULT_TYPE
             "precio_hora": "precio por hora",
             "desplazamiento": "desplazamiento en €",
             "fecha": "fecha",
-            "total": "total en €"
+            "total": "total en €",
+            "observaciones": "observaciones",
         }
+        if campo == "observaciones":
+            texto_peticion = (
+                "📝 *Observaciones*: envía un audio o escríbelo.\n"
+                "Para eliminarlas escribe *eliminar*.\n"
+                "/cancelar para salir."
+            )
+        else:
+            texto_peticion = (
+                f"✏️ *{nombres[campo].capitalize()}*: envía un audio "
+                f"o escríbelo directamente.\n/cancelar para salir."
+            )
         await query.message.reply_text(
-            f"✏️ *{nombres[campo].capitalize()}*: envía un audio o escríbelo directamente.\n/cancelar para salir.",
+            texto_peticion,
             parse_mode="Markdown"
         )
         return ESPERANDO_VALOR_CAMPO
@@ -576,6 +596,8 @@ Además de interpretar el valor, aplica siempre estas correcciones:
 - NIF/NIE: siempre en mayúsculas, sin espacios ni guiones. DNI: 8 dígitos + letra (ej: "12345678A"). NIE: letra + 7 dígitos + letra (ej: "X1234567B")
 - Teléfono: formato español con espacios cada 3 dígitos, ej: "634 812 755"
 - IBAN: elimina espacios, convierte a mayúsculas, luego formatea en grupos de 4. Ejemplo: {{"iban": "ES91 2100 0418 4200 0512 3456"}}
+- observaciones: {{"observaciones": "Cliente pagó en efectivo."}} ← texto limpio, máximo 2 líneas
+  Si el usuario dice "eliminar", "quitar", "borrar" o similar → {{"observaciones": null}}
 
 Devuelve SOLO el JSON, sin texto adicional.
 """
@@ -595,6 +617,17 @@ async def handle_valor_campo(update: Update, context: ContextTypes.DEFAULT_TYPE)
     campo = context.user_data.get("campo_editando")
     valor = update.message.text
     datos = context.user_data.get("datos_factura")
+
+    if campo == "observaciones" and valor.lower().strip() in ["eliminar", "quitar", "borrar", "borra", "quita", "elimina"]:
+        datos["observaciones"] = None
+        context.user_data["datos_factura"] = datos
+        tipo = datos.get("tipo", "factura")
+        await update.message.reply_text(
+            construir_resumen(datos),
+            parse_mode="Markdown",
+            reply_markup=construir_teclado_confirmacion(tipo)
+        )
+        return ESPERANDO_CONFIRMACION
 
     await update.message.reply_text("⚙️ Interpretando...")
 

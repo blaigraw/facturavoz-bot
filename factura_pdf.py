@@ -166,6 +166,19 @@ def generar_factura_pdf(datos, numero_factura=None, info_autonomo=None, tipo="fa
     elementos.append(Paragraph("CONCEPTO:", estilo_subtitulo))
     elementos.append(Spacer(1, 0.2*cm))
     elementos.append(Paragraph(datos.get("concepto", "—"), estilo_normal))
+
+    if datos.get("observaciones"):
+        elementos.append(Spacer(1, 0.3*cm))
+        elementos.append(Paragraph("OBSERVACIONES:", estilo_subtitulo))
+        elementos.append(Spacer(1, 0.2*cm))
+        elementos.append(Paragraph(
+            datos["observaciones"],
+            ParagraphStyle("obs", parent=styles["Normal"],
+                fontSize=9,
+                textColor=colors.HexColor("#7F8C8D"),
+                fontName="Helvetica-Oblique")
+        ))
+
     elementos.append(Spacer(1, 0.8*cm))
 
     # ── TABLA DE LÍNEAS DE FACTURA ────────────────────────
