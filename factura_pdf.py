@@ -163,7 +163,7 @@ def generar_factura_pdf(datos, numero_factura=None, info_autonomo=None, tipo="fa
     # ── DESCRIPCIÓN DEL TRABAJO ───────────────────────────
     elementos.append(Paragraph("CONCEPTO:", estilo_subtitulo))
     elementos.append(Spacer(1, 0.2*cm))
-    elementos.append(Paragraph(datos.get("concepto", "—"), estilo_normal))
+    elementos.append(Paragraph(datos.get("concepto") or "—", estilo_normal))
 
     if datos.get("observaciones"):
         elementos.append(Spacer(1, 0.3*cm))
