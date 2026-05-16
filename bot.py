@@ -2,7 +2,6 @@ import os
 import json
 from datetime import datetime
 from config import config_existe, guardar_config, cargar_config, get_siguiente_numero_factura, get_siguiente_numero_presupuesto, init_db, guardar_log, guardar_consentimiento, tiene_consentimiento, guardar_iban, guardar_iva, eliminar_usuario, eliminar_logs, get_pruebas_realizadas, incrementar_prueba, guardar_numero_inicial_factura, guardar_numero_inicial_presupuesto, get_user_exists, crear_tablas_mantenimiento, get_mantenimiento, set_mantenimiento, add_notificacion_pendiente, get_notificaciones_pendientes, vaciar_notificaciones_pendientes
-from holded import crear_factura
 from factura_pdf import generar_factura_pdf
 from openai import OpenAI
 from dotenv import load_dotenv
@@ -45,6 +44,7 @@ REGISTRO_ACTIVIDAD_OTRO = 18
 REGISTRO_NUMERO_FACTURA = 19
 REGISTRO_NUMERO_PRESUPUESTO = 20
 REGISTRO_MOSTRAR_PRECIO_HORA = 21
+PERFIL_EDITANDO_CAMPO = 22
 CONSENT = 99
 
 TECLADO_CONFIRMAR = InlineKeyboardMarkup([
@@ -76,7 +76,7 @@ Extrae datos de una nota de voz informal y devuelve SOLO este JSON, sin texto ad
 {{"tipo": null, "cliente_nombre": null, "cliente_direccion": null, "concepto": null,
 "observaciones": null, "materiales": [{{"descripcion": null, "precio": null}}],
 "horas": null, "precio_hora": null, "desplazamiento": null,
-"validez_dias": null, "fecha": "{hoy}", "total": 0.00}}
+"validez_dias": null, "fecha": "{hoy}"}}
 
 REGLAS:
 - Datos no mencionados → null
@@ -91,8 +91,16 @@ REGLAS:
 - materiales sin precio: si el autónomo dice que no sabe el precio, no lo recuerda, lo tiene que confirmar, o usa expresiones como "no sé cuánto fue", "no me acuerdo", "lo miro luego", "tengo que confirmarlo" → usa "precio": null. NUNCA uses 0.0 cuando el precio no se menciona o se indica incertidumbre.
 - materiales con precio individual: si cada material tiene su propio precio mencionado explícitamente → crea un ítem separado por material.
 - materiales agrupados: SOLO agrupa materiales en un único ítem cuando el autónomo mencione explícitamente un precio total compartido entre varios con expresiones como "todo junto", "entre los dos", "en total", "todo eso junto". Ejemplo correcto: "el adhesivo y las crucetas, todo junto 8 euros" → {{"descripcion": "Adhesivo y crucetas", "precio": 8.0}}. Ejemplo incorrecto: agrupar materiales con precios distintos o cuando uno no tiene precio.
-- observaciones: solo si menciona explícitamente algo para anotar (pago en efectivo, garantía, certificado). Máximo 2 líneas. Si no → null
-- total: suma materiales + (horas × precio_hora) + desplazamiento"""
+- observaciones: solo si menciona explícitamente algo para anotar (pago en efectivo, garantía, certificado). Máximo 2 líneas. Si no → null"""
+
+def calcular_subtotal(datos):
+    total_materiales = sum(
+        m["precio"] for m in (datos.get("materiales") or [])
+        if m.get("precio") is not None
+    )
+    total_horas = (datos.get("horas") or 0) * (datos.get("precio_hora") or 0)
+    total_desplazamiento = datos.get("desplazamiento") or 0
+    return round(total_materiales + total_horas + total_desplazamiento, 2)
 
 def construir_resumen(datos, iva_porcentaje=0.21):
     """Construye el texto del resumen — factura o presupuesto"""
@@ -133,11 +141,12 @@ def construir_resumen(datos, iva_porcentaje=0.21):
         validez = datos.get("validez_dias") or 30
         resumen += f"⏳ *Validez:* {validez} días\n"
 
-    iva_etiqueta = f"{int(iva_porcentaje * 100)}%" if iva_porcentaje > 0 else "Exento"
+    iva_etiqueta = f"{int(iva_porcentaje * 100)}%" if iva_porcentaje > 0 else "0% — ISP"
+    subtotal = calcular_subtotal(datos)
     resumen += (
-        f"\n💰 *Subtotal: {datos['total'] or 0}€*\n"
-        f"🧾 *IVA ({iva_etiqueta}): {round((datos['total'] or 0) * iva_porcentaje, 2)}€*\n"
-        f"💵 *TOTAL: {round((datos['total'] or 0) * (1 + iva_porcentaje), 2)}€*\n"
+        f"\n💰 *Subtotal: {subtotal}€*\n"
+        f"🧾 *IVA ({iva_etiqueta}): {round(subtotal * iva_porcentaje, 2)}€*\n"
+        f"💵 *TOTAL: {round(subtotal * (1 + iva_porcentaje), 2)}€*\n"
     )
     resumen += "\n_✏️ Pulsa *Editar campo* si necesitas corregir algo._\n\n¿Es correcto?"
     return resumen
@@ -196,12 +205,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # Usuario ya registrado — flujo normal
     if config_existe(chat_id):
-        config = cargar_config(chat_id)
-        texto = (
-            f"👋 Hola de nuevo, {config['nombre']}.\n\n"
-            "Envíame una nota de voz describiendo el trabajo."
-        )
-        await update.message.reply_text(texto, parse_mode="Markdown")
+        await update.message.reply_text("¿Factura o presupuesto? Manda el audio.")
         return ESPERANDO_AUDIO
 
     # Usuario nuevo — mostrar aviso de privacidad primero
@@ -714,10 +718,7 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
         else:
             datos["precio_hora_es_default"] = False
 
-        total_materiales = sum(m["precio"] for m in datos["materiales"] if m.get("precio") is not None) if datos["materiales"] else 0
-        total_horas = (datos["horas"] or 0) * (datos["precio_hora"] or 0)
-        total_desplazamiento = datos["desplazamiento"] or 0
-        datos["total"] = round(total_materiales + total_horas + total_desplazamiento, 2)
+        datos["total"] = calcular_subtotal(datos)
         context.user_data["datos_factura"] = datos
         context.user_data["transcripcion"] = texto
         context.user_data["tipo_detectado"] = datos.get("tipo")
@@ -742,8 +743,9 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return ESPERANDO_CONFIRMACION
 
         # Flujo normal si tipo detectado
+        iva_rate = config_usuario.get("iva", 0.21) if config_usuario else 0.21
         await update.message.reply_text(
-            construir_resumen(datos),
+            construir_resumen(datos, iva_porcentaje=iva_rate),
             parse_mode="Markdown",
             reply_markup=construir_teclado_confirmacion(tipo)
         )
@@ -766,8 +768,10 @@ async def handle_confirmacion(update: Update, context: ContextTypes.DEFAULT_TYPE
             datos["validez_dias"] = 30
         context.user_data["datos_factura"] = datos
         tipo = datos["tipo"]
+        config = cargar_config(query.message.chat_id)
+        iva_rate = config.get("iva", 0.21) if config else 0.21
         await query.edit_message_text(
-            construir_resumen(datos),
+            construir_resumen(datos, iva_porcentaje=iva_rate),
             parse_mode="Markdown",
             reply_markup=construir_teclado_confirmacion(tipo)
         )
@@ -778,8 +782,10 @@ async def handle_confirmacion(update: Update, context: ContextTypes.DEFAULT_TYPE
             datos["validez_dias"] = 30 if datos["tipo"] == "presupuesto" else None
             context.user_data["datos_factura"] = datos
             tipo = datos["tipo"]
+            config = cargar_config(query.message.chat_id)
+            iva_rate = config.get("iva", 0.21) if config else 0.21
             await query.edit_message_text(
-                construir_resumen(datos),
+                construir_resumen(datos, iva_porcentaje=iva_rate),
                 parse_mode="Markdown",
                 reply_markup=construir_teclado_confirmacion(tipo)
             )
@@ -872,9 +878,7 @@ async def handle_confirmacion(update: Update, context: ContextTypes.DEFAULT_TYPE
             contenido = respuesta.choices[0].message.content.strip()
             contenido = contenido.replace("```json", "").replace("```", "").strip()
             datos = json.loads(contenido)
-            total_materiales = sum(m["precio"] for m in datos["materiales"] if m.get("precio") is not None) if datos.get("materiales") else 0
-            total_horas = (datos.get("horas") or 0) * (datos.get("precio_hora") or 0)
-            datos["total"] = round(total_materiales + total_horas + (datos.get("desplazamiento") or 0), 2)
+            datos["total"] = calcular_subtotal(datos)
             context.user_data["datos_factura"] = datos
             context.user_data["transcripcion"] = texto
             context.user_data["tipo_detectado"] = datos.get("tipo")
@@ -1069,8 +1073,10 @@ async def handle_valor_campo(update: Update, context: ContextTypes.DEFAULT_TYPE)
         datos["observaciones"] = None
         context.user_data["datos_factura"] = datos
         tipo = datos.get("tipo", "factura")
+        _cfg = cargar_config(update.effective_chat.id)
+        _iva = _cfg.get("iva", 0.21) if _cfg else 0.21
         await update.message.reply_text(
-            construir_resumen(datos),
+            construir_resumen(datos, iva_porcentaje=_iva),
             parse_mode="Markdown",
             reply_markup=construir_teclado_confirmacion(tipo)
         )
@@ -1090,18 +1096,17 @@ async def handle_valor_campo(update: Update, context: ContextTypes.DEFAULT_TYPE)
         )
         return ESPERANDO_VALOR_CAMPO
 
-    # Recalcula el total en Python siempre
-    total_materiales = sum(m["precio"] for m in datos["materiales"] if m.get("precio") is not None) if datos["materiales"] else 0
-    total_horas = (datos["horas"] or 0) * (datos["precio_hora"] or 0)
-    datos["total"] = round(total_materiales + total_horas + (datos["desplazamiento"] or 0), 2)
+    datos["total"] = calcular_subtotal(datos)
 
     context.user_data["datos_factura"] = datos
     context.user_data["campos_editados"].append(campo)
     context.user_data["numero_ediciones"] = context.user_data.get("numero_ediciones", 0) + 1
 
     tipo = datos.get("tipo", "factura")
+    _cfg = cargar_config(update.effective_chat.id)
+    _iva = _cfg.get("iva", 0.21) if _cfg else 0.21
     await update.message.reply_text(
-        construir_resumen(datos),
+        construir_resumen(datos, iva_porcentaje=_iva),
         parse_mode="Markdown",
         reply_markup=construir_teclado_confirmacion(tipo)
     )
@@ -1143,18 +1148,17 @@ async def handle_voice_campo(update: Update, context: ContextTypes.DEFAULT_TYPE)
         )
         return ESPERANDO_VALOR_CAMPO
 
-    # Recalcula el total en Python siempre
-    total_materiales = sum(m["precio"] for m in datos["materiales"] if m.get("precio") is not None) if datos["materiales"] else 0
-    total_horas = (datos["horas"] or 0) * (datos["precio_hora"] or 0)
-    datos["total"] = round(total_materiales + total_horas + (datos["desplazamiento"] or 0), 2)
+    datos["total"] = calcular_subtotal(datos)
 
     context.user_data["datos_factura"] = datos
     context.user_data["campos_editados"].append(campo)
     context.user_data["numero_ediciones"] = context.user_data.get("numero_ediciones", 0) + 1
 
     tipo = datos.get("tipo", "factura")
+    _cfg = cargar_config(update.effective_chat.id)
+    _iva = _cfg.get("iva", 0.21) if _cfg else 0.21
     await update.message.reply_text(
-        construir_resumen(datos),
+        construir_resumen(datos, iva_porcentaje=_iva),
         parse_mode="Markdown",
         reply_markup=construir_teclado_confirmacion(tipo)
     )
@@ -1182,11 +1186,13 @@ async def generar_y_enviar_pdf(query, context):
         "⏳ Generando presupuesto PDF..." if es_presupuesto else "⏳ Generando factura PDF..."
     )
     numero = get_siguiente_numero_presupuesto(chat_id) if es_presupuesto else get_siguiente_numero_factura(chat_id)
+    iva_rate = config.get("iva", 0.21) if config else 0.21
     nombre_pdf = generar_factura_pdf(
         datos,
         numero_factura=numero,
-        info_autonomo=cargar_config(chat_id) if not modo_prueba else None,
+        info_autonomo=config if not modo_prueba else None,
         tipo=tipo,
+        iva_porcentaje=iva_rate,
         es_prueba=modo_prueba
     )
     prefijo = "presupuesto" if es_presupuesto else "factura"
@@ -1443,7 +1449,7 @@ async def mostrar_perfil(message, chat_id):
         iban_raw = config["iban"].replace(" ", "").upper()
         iban_texto = " ".join(iban_raw[i:i+4] for i in range(0, len(iban_raw), 4))
     iva_actual = config.get("iva", 0.21)
-    iva_texto = "21% General" if iva_actual == 0.21 else "10% Reducido" if iva_actual == 0.10 else "Sin IVA"
+    iva_texto = "21% General" if iva_actual == 0.21 else "10% Reducido" if iva_actual == 0.10 else "0% ISP"
     precio_hora_texto = f"{config.get('precio_hora')}€/h" if config.get('precio_hora') else "No configurado"
     mostrar_precio_texto = "Sí" if config.get('mostrar_precio_hora', True) else "No"
     texto = (
@@ -1493,9 +1499,9 @@ async def handle_perfil_callbacks(update: Update, context: ContextTypes.DEFAULT_
     if query.data == "perfil_iva":
         teclado_iva = InlineKeyboardMarkup([
             [
-                InlineKeyboardButton("21% General", callback_data="setiva_21"),
-                InlineKeyboardButton("10% Reducido", callback_data="setiva_10"),
-                InlineKeyboardButton("Sin IVA", callback_data="setiva_0")
+                InlineKeyboardButton("21%", callback_data="setiva_21"),
+                InlineKeyboardButton("10%", callback_data="setiva_10"),
+                InlineKeyboardButton("0% ISP", callback_data="setiva_0")
             ]
         ])
         await query.message.reply_text(
@@ -1566,7 +1572,7 @@ async def handle_perfil_callbacks(update: Update, context: ContextTypes.DEFAULT_
                 guardar_numero_inicial_presupuesto(chat_id, numero)
             await query.message.reply_text("✅ Guardado correctamente.")
             await mostrar_perfil(query.message, chat_id)
-            return ESPERANDO_AUDIO
+            return context.user_data.get("estado_previo", ESPERANDO_AUDIO)
         if campo == "precio_hora":
             try:
                 precio = float(nuevo_valor.replace(",", ".").replace("€", "").strip())
@@ -1578,7 +1584,7 @@ async def handle_perfil_callbacks(update: Update, context: ContextTypes.DEFAULT_
             guardar_config(chat_id, config)
             await query.message.reply_text("✅ Guardado correctamente.")
             await mostrar_perfil(query.message, chat_id)
-            return ESPERANDO_AUDIO
+            return context.user_data.get("estado_previo", ESPERANDO_AUDIO)
 
         if campo == "mostrar_precio_hora":
             valor_lower = nuevo_valor.strip().lower()
@@ -1594,14 +1600,14 @@ async def handle_perfil_callbacks(update: Update, context: ContextTypes.DEFAULT_
             guardar_config(chat_id, config)
             await query.message.reply_text("✅ Guardado correctamente.")
             await mostrar_perfil(query.message, chat_id)
-            return ESPERANDO_AUDIO
+            return context.user_data.get("estado_previo", ESPERANDO_AUDIO)
 
         config = cargar_config(chat_id)
         config[campo] = nuevo_valor
         guardar_config(chat_id, config)
         await query.message.reply_text("✅ Guardado correctamente.")
         await mostrar_perfil(query.message, chat_id)
-        return ESPERANDO_AUDIO
+        return context.user_data.get("estado_previo", ESPERANDO_AUDIO)
 
     elif query.data == "perfil_repetir":
         campo = context.user_data.get("perfil_campo_editando")
@@ -1624,7 +1630,7 @@ async def handle_perfil_callbacks(update: Update, context: ContextTypes.DEFAULT_
             f"✅ Guardado. {'Se mostrará el precio/hora en tus facturas.' if mostrar else 'Solo aparecerá el total de mano de obra.'}"
         )
         await mostrar_perfil(query.message, chat_id)
-        return ESPERANDO_AUDIO
+        return context.user_data.get("estado_previo", ESPERANDO_AUDIO)
 
 
 async def handle_perfil_texto(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -1779,12 +1785,43 @@ async def handle_onboarding_registro(update: Update, context: ContextTypes.DEFAU
     return REGISTRO_NOMBRE
 
 
+async def ayuda(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text(
+        "ℹ️ Cómo funciona FacturaVoz\n\n"
+        "1️⃣ Manda un audio describiendo el trabajo:\n"
+        "   cliente, qué has hecho, precio.\n"
+        "2️⃣ FacturaVoz te genera la factura o\n"
+        "   presupuesto en PDF en segundos.\n"
+        "3️⃣ Lo descargas y lo envías al cliente.\n\n"
+        "📋 Comandos (botón Menú ☰ abajo a la izquierda):\n"
+        "• /start — Empezar o nueva factura\n"
+        "• /perfil — Tus datos\n"
+        "• /cancelar — Cortar la acción actual\n"
+        "• /ayuda — Este mensaje\n\n"
+        "💬 ¿Algo no funciona o falta?\n"
+        "Escríbeme directamente: @FacturaVozSoporte\n"
+        "Cualquier fallo, idea o duda — me llega y te respondo."
+    )
+
+async def perfil(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    chat_id = update.effective_chat.id
+    config = cargar_config(chat_id)
+    if not config:
+        await update.message.reply_text("No tienes perfil configurado. Usa /start para registrarte.")
+        return ESPERANDO_AUDIO
+    if context.user_data.get("datos_factura"):
+        context.user_data["estado_previo"] = ESPERANDO_CONFIRMACION
+    else:
+        context.user_data["estado_previo"] = ESPERANDO_AUDIO
+    await mostrar_perfil(update.message, chat_id)
+    return EDITANDO_PERFIL_CAMPO
+
 async def post_init(application):
     await application.bot.set_my_commands([
-        ("start", "Iniciar o reiniciar el bot"),
-        ("cancelar", "Cancelar la operación actual"),
-        ("perfil", "Ver y editar tus datos"),
-        ("privacidad", "Política de privacidad"),
+        ("start",    "Empezar"),
+        ("perfil",   "Mis datos"),
+        ("ayuda",    "Ayuda y contacto"),
+        ("cancelar", "Cancelar acción actual"),
     ])
 
 
@@ -1792,6 +1829,7 @@ async def post_init(application):
 conv_handler = ConversationHandler(
     entry_points=[
         CommandHandler("start", start),
+        CommandHandler("perfil", perfil),
         MessageHandler(filters.VOICE, handle_voice),
         CallbackQueryHandler(handle_onboarding_prueba, pattern="^onboarding_prueba$"),
         CallbackQueryHandler(handle_onboarding_registro, pattern="^onboarding_registrar$"),
@@ -1883,6 +1921,7 @@ conv_handler = ConversationHandler(
     fallbacks=[
         CommandHandler("cancelar", cancelar),
         CommandHandler("start", start),
+        CommandHandler("perfil", perfil),
         CallbackQueryHandler(handle_perfil_callbacks, pattern="^(perfil_|setiva_)"),
     ]
 )
@@ -1906,8 +1945,8 @@ async def main():
     app.add_handler(MessageHandler(filters.ALL, check_mantenimiento), group=-1)
     app.add_handler(CommandHandler("admin_mantenimiento", check_mantenimiento), group=-1)
     app.add_handler(conv_handler)
+    app.add_handler(CommandHandler("ayuda", ayuda))
     app.add_handler(CommandHandler("privacidad", privacidad))
-    app.add_handler(CommandHandler("perfil", cmd_perfil))
     app.add_handler(CommandHandler("admin_reset", admin_reset))
     app.add_handler(CommandHandler("admin_mantenimiento", admin_mantenimiento))
     app.add_handler(CallbackQueryHandler(

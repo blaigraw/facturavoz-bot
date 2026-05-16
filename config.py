@@ -136,7 +136,7 @@ def get_siguiente_numero_factura(chat_id):
             numero = cur.fetchone()[0]
         conn.commit()
     año = datetime.now().year
-    return f"{año}-{numero:04d}"
+    return f"{año}-{numero:03d}"
 
 def get_siguiente_numero_presupuesto(chat_id):
     with get_conn() as conn:

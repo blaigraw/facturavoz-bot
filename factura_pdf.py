@@ -198,10 +198,7 @@ def generar_factura_pdf(datos, numero_factura=None, info_autonomo=None, tipo="fa
     if datos.get("materiales"):
         for material in datos["materiales"]:
             precio = material.get("precio")
-            if precio is None or precio == "":
-                precio_display = "—"
-                importe_display = "—"
-            elif precio == "Pendiente":
+            if precio is None:
                 precio_display = "Pendiente"
                 importe_display = "Pendiente"
             else:
