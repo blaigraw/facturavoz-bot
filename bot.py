@@ -1771,7 +1771,8 @@ async def handle_onboarding_prueba(update: Update, context: ContextTypes.DEFAULT
         "• Horas y precio por hora\n"
         "• Desplazamiento\n\n"
         "Si algo no sale bien no pasa nada — "
-        "podrás editar cualquier campo antes de confirmar. 👇",
+        "podrás editar cualquier campo antes de confirmar. 👇\n\n"
+        "¿Te atascas o algo no funciona? Escribe /ayuda",
         parse_mode="Markdown"
     )
     return ESPERANDO_AUDIO
