@@ -100,11 +100,11 @@ REGLAS:
 
 def calcular_subtotal(datos):
     total_materiales = sum(
-        m["precio"] for m in (datos.get("materiales") or [])
+        float(m.get("precio") or 0) for m in (datos.get("materiales") or [])
         if m.get("precio") is not None
     )
-    total_horas = (datos.get("horas") or 0) * (datos.get("precio_hora") or 0)
-    total_desplazamiento = datos.get("desplazamiento") or 0
+    total_horas = float(datos.get("horas") or 0) * float(datos.get("precio_hora") or 0)
+    total_desplazamiento = float(datos.get("desplazamiento") or 0)
     return round(total_materiales + total_horas + total_desplazamiento, 2)
 
 def calcular_ajuste(datos: dict, iva_rate: float) -> dict | None:
