@@ -2148,6 +2148,7 @@ async def main():
 
     async with application:
         await application.start()
+        await post_init(application)
         print("Bot activo en modo webhook")
         if WEBHOOK_URL and WEBHOOK_SECRET:
             await application.bot.set_webhook(
@@ -2161,7 +2162,7 @@ async def main():
             print(f"WEBHOOK_SECRET definido: {bool(WEBHOOK_SECRET)}")
         await asyncio.Event().wait()
 
-application = ApplicationBuilder().token(TELEGRAM_TOKEN).post_init(post_init).build()
+application = ApplicationBuilder().token(TELEGRAM_TOKEN).build()
 application.add_handler(MessageHandler(filters.ALL, check_mantenimiento), group=-1)
 application.add_handler(CommandHandler("admin_mantenimiento", check_mantenimiento), group=-1)
 application.add_handler(conv_handler)
