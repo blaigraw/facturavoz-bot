@@ -1995,10 +1995,11 @@ async def post_init(application):
     print(f"WEBHOOK_URL: {WEBHOOK_URL}")
     print(f"WEBHOOK_SECRET definido: {bool(WEBHOOK_SECRET)}")
     await application.bot.set_my_commands([
-        ("start",    "Empezar"),
-        ("perfil",   "Mis datos"),
-        ("ayuda",    "Ayuda y contacto"),
-        ("cancelar", "Cancelar acción actual"),
+        ("start",      "Empezar"),
+        ("perfil",     "Mis datos"),
+        ("ayuda",      "Ayuda y guía de uso"),
+        ("privacidad", "Política de privacidad"),
+        ("cancelar",   "Cancelar acción actual"),
     ])
     if WEBHOOK_URL:
         await application.bot.set_webhook(
