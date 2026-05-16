@@ -162,7 +162,7 @@ def construir_resumen(datos, iva_porcentaje=0.21):
     if datos["materiales"]:
         resumen += "\n📦 *Materiales:*\n"
         for m in datos["materiales"]:
-            precio_texto = f"{m['precio']}€" if m.get("precio") is not None else "Pendiente"
+            precio_texto = "Pendiente" if m.get("precio") is None else f'{float(m.get("precio")):.2f}€'
             resumen += f"  • {m['descripcion']}: {precio_texto}\n"
 
     precio_hora_label = f"{datos['precio_hora'] or 0}€/h"
