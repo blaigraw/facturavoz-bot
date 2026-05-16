@@ -1,7 +1,10 @@
 import os
 import re
+import sys
 import json
 from datetime import datetime
+
+sys.stdout.reconfigure(line_buffering=True)
 from config import config_existe, guardar_config, cargar_config, get_siguiente_numero_factura, get_siguiente_numero_presupuesto, init_db, guardar_log, guardar_consentimiento, tiene_consentimiento, guardar_iban, guardar_iva, eliminar_usuario, eliminar_logs, get_pruebas_realizadas, incrementar_prueba, guardar_numero_inicial_factura, guardar_numero_inicial_presupuesto, get_user_exists, crear_tablas_mantenimiento, get_mantenimiento, set_mantenimiento, add_notificacion_pendiente, get_notificaciones_pendientes, vaciar_notificaciones_pendientes
 from factura_pdf import generar_factura_pdf
 from openai import OpenAI
@@ -2000,10 +2003,10 @@ async def post_init(application):
             ("privacidad", "Política de privacidad"),
             ("cancelar",   "Cancelar acción actual"),
         ])
-        print("Comandos registrados en Telegram ✓")
+        print("Comandos registrados en Telegram ✓", flush=True)
     except Exception as e:
-        print(f"ERROR set_my_commands tipo: {type(e).__name__}")
-        print(f"ERROR set_my_commands detalle: {e}")
+        print(f"ERROR set_my_commands tipo: {type(e).__name__}", flush=True)
+        print(f"ERROR set_my_commands detalle: {e}", flush=True)
         import traceback
         traceback.print_exc()
 
