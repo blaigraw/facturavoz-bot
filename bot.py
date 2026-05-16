@@ -792,6 +792,17 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
             datos["precio_hora_es_default"] = False
 
         datos["total"] = calcular_subtotal(datos)
+
+        sin_cliente = not (datos.get("cliente_nombre") or "").strip()
+        sin_trabajo = not (datos.get("concepto") or "").strip()
+        if sin_cliente and sin_trabajo:
+            await update.message.reply_text(
+                "No he podido extraer los datos del audio. "
+                "Intenta incluir al menos el nombre del cliente "
+                "y el trabajo realizado."
+            )
+            return ESPERANDO_AUDIO
+
         context.user_data["datos_factura"] = datos
         context.user_data["transcripcion"] = texto
         context.user_data["tipo_detectado"] = datos.get("tipo")
