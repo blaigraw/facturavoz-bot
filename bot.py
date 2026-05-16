@@ -2001,6 +2001,7 @@ async def post_init(application):
         ("privacidad", "Política de privacidad"),
         ("cancelar",   "Cancelar acción actual"),
     ])
+    print("Comandos registrados en Telegram")
     if WEBHOOK_URL:
         await application.bot.set_webhook(
             url=f"{WEBHOOK_URL}/webhook",
