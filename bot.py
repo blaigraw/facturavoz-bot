@@ -1,4 +1,5 @@
 import os
+import re
 import json
 from datetime import datetime
 from config import config_existe, guardar_config, cargar_config, get_siguiente_numero_factura, get_siguiente_numero_presupuesto, init_db, guardar_log, guardar_consentimiento, tiene_consentimiento, guardar_iban, guardar_iva, eliminar_usuario, eliminar_logs, get_pruebas_realizadas, incrementar_prueba, guardar_numero_inicial_factura, guardar_numero_inicial_presupuesto, get_user_exists, crear_tablas_mantenimiento, get_mantenimiento, set_mantenimiento, add_notificacion_pendiente, get_notificaciones_pendientes, vaciar_notificaciones_pendientes
@@ -1022,7 +1023,7 @@ async def handle_confirmacion(update: Update, context: ContextTypes.DEFAULT_TYPE
 
         if campo == "precio_final":
             await query.message.reply_text(
-                "🎯 *Precio final a cobrar*: escribe el importe total "
+                "🎯 *Precio final a cobrar*: escribe o di el importe total "
                 "(IVA incluido si aplica).\n"
                 "Ejemplo: _250_ o _250.50_\n"
                 "/cancelar para salir sin cambios.",
@@ -1138,11 +1139,49 @@ Devuelve SOLO el JSON, sin texto adicional.
     return json.loads(contenido)
 
 
-async def handle_ajuste_precio_audio_rechazado(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def handle_ajuste_precio_audio(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Transcribe el audio con Whisper, extrae el importe y aplica la misma lógica que texto."""
+    datos = context.user_data.get("datos_factura")
+
+    await update.message.reply_text("🎙️ Audio recibido, transcribiendo...")
+
+    file = await context.bot.get_file(update.message.voice.file_id)
+    audio_path = "audio_campo.ogg"
+    await file.download_to_drive(audio_path)
+
+    with open(audio_path, "rb") as audio_file:
+        transcription = client.audio.transcriptions.create(
+            model="whisper-1",
+            file=audio_file,
+            language="es"
+        )
+
+    texto = transcription.text.strip().replace(",", ".")
+    match = re.search(r'\d+(\.\d+)?', texto)
+    numero_str = match.group() if match else texto
+
+    try:
+        precio_final = float(numero_str)
+        if precio_final <= 0:
+            raise ValueError
+    except ValueError:
+        await update.message.reply_text(
+            "No he podido extraer un importe válido. Escribe o di el precio final (ej: 250)."
+        )
+        return AJUSTE_PRECIO
+
+    datos["precio_final"] = round(precio_final, 2)
+    context.user_data["datos_factura"] = datos
+
+    tipo = datos.get("tipo", "factura")
+    _cfg = cargar_config(update.effective_chat.id)
+    _iva = _cfg.get("iva", 0.21) if _cfg else 0.21
     await update.message.reply_text(
-        "Escribe el precio final como número (ej: 250)"
+        construir_resumen(datos, iva_porcentaje=_iva),
+        parse_mode="Markdown",
+        reply_markup=construir_teclado_confirmacion(tipo)
     )
-    return AJUSTE_PRECIO
+    return ESPERANDO_CONFIRMACION
 
 async def handle_ajuste_precio(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Recibe el precio final a cobrar, valida, deriva ajuste y vuelve al resumen."""
@@ -2039,7 +2078,7 @@ conv_handler = ConversationHandler(
         ],
         AJUSTE_PRECIO: [
             MessageHandler(filters.TEXT & ~filters.COMMAND, handle_ajuste_precio),
-            MessageHandler(filters.VOICE | filters.AUDIO, handle_ajuste_precio_audio_rechazado),
+            MessageHandler(filters.VOICE | filters.AUDIO, handle_ajuste_precio_audio),
         ],
         ESPERANDO_IBAN: [
             MessageHandler(filters.TEXT & ~filters.COMMAND, handle_iban),
