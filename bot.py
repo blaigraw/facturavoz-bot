@@ -1992,25 +1992,17 @@ async def perfil(update: Update, context: ContextTypes.DEFAULT_TYPE):
     return EDITANDO_PERFIL_CAMPO
 
 async def post_init(application):
-    print(f"WEBHOOK_URL: {WEBHOOK_URL}")
-    print(f"WEBHOOK_SECRET definido: {bool(WEBHOOK_SECRET)}")
-    await application.bot.set_my_commands([
-        ("start",      "Empezar"),
-        ("perfil",     "Mis datos"),
-        ("ayuda",      "Ayuda y guía de uso"),
-        ("privacidad", "Política de privacidad"),
-        ("cancelar",   "Cancelar acción actual"),
-    ])
-    print("Comandos registrados en Telegram")
-    if WEBHOOK_URL:
-        await application.bot.set_webhook(
-            url=f"{WEBHOOK_URL}/webhook",
-            secret_token=WEBHOOK_SECRET,
-            allowed_updates=["message", "callback_query"]
-        )
-        print(f"Webhook registrado: {WEBHOOK_URL}/webhook")
-    else:
-        print("ADVERTENCIA: WEBHOOK_URL no definida")
+    try:
+        await application.bot.set_my_commands([
+            ("start",      "Empezar"),
+            ("perfil",     "Mis datos"),
+            ("ayuda",      "Ayuda y guía de uso"),
+            ("privacidad", "Política de privacidad"),
+            ("cancelar",   "Cancelar acción actual"),
+        ])
+        print("Comandos registrados en Telegram")
+    except Exception as e:
+        print(f"ERROR set_my_commands: {e}")
 
 
 # ConversationHandler — gestiona el estado de cada usuario
