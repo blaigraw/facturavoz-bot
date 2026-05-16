@@ -195,7 +195,6 @@ def construir_teclado_campos():
         ],
         [
             InlineKeyboardButton("📅 Fecha", callback_data="campo_fecha"),
-            InlineKeyboardButton("💵 Total", callback_data="campo_total")
         ],
         [
             InlineKeyboardButton("📝 Observaciones", callback_data="campo_observaciones"),
