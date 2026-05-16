@@ -2000,9 +2000,12 @@ async def post_init(application):
             ("privacidad", "Política de privacidad"),
             ("cancelar",   "Cancelar acción actual"),
         ])
-        print("Comandos registrados en Telegram")
+        print("Comandos registrados en Telegram ✓")
     except Exception as e:
-        print(f"ERROR set_my_commands: {e}")
+        print(f"ERROR set_my_commands tipo: {type(e).__name__}")
+        print(f"ERROR set_my_commands detalle: {e}")
+        import traceback
+        traceback.print_exc()
 
 
 # ConversationHandler — gestiona el estado de cada usuario
