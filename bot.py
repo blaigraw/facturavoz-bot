@@ -1820,6 +1820,8 @@ async def perfil(update: Update, context: ContextTypes.DEFAULT_TYPE):
     return EDITANDO_PERFIL_CAMPO
 
 async def post_init(application):
+    print(f"WEBHOOK_URL: {WEBHOOK_URL}")
+    print(f"WEBHOOK_SECRET definido: {bool(WEBHOOK_SECRET)}")
     await application.bot.set_my_commands([
         ("start",    "Empezar"),
         ("perfil",   "Mis datos"),
