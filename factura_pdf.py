@@ -128,7 +128,7 @@ def generar_factura_pdf(datos, numero_factura=None, info_autonomo=None, tipo="fa
             fontSize=11, fontName="Helvetica-Bold",
             textColor=colors.HexColor("#2C3E50"), alignment=TA_RIGHT)),
         Spacer(1, 0.2*cm),
-        Paragraph(f"Fecha: {datos.get('fecha', datetime.now().strftime('%d/%m/%Y'))}",
+        Paragraph(f"Fecha: {datos.get('fecha') or datetime.now().strftime('%d/%m/%Y')}",
             ParagraphStyle("fecha_cab", parent=styles["Normal"],
             fontSize=10, textColor=colors.HexColor("#7F8C8D"), alignment=TA_RIGHT)),
     ]
@@ -206,7 +206,7 @@ def generar_factura_pdf(datos, numero_factura=None, info_autonomo=None, tipo="fa
                 importe_display = f"{float(precio):.2f}€"
                 subtotal += float(precio)
             filas.append([
-                Paragraph(material["descripcion"], estilo_normal),
+                Paragraph(material.get("descripcion") or "—", estilo_normal),
                 Paragraph("1", estilo_derecha),
                 Paragraph(precio_display, estilo_derecha),
                 Paragraph(importe_display, estilo_derecha),
@@ -224,14 +224,14 @@ def generar_factura_pdf(datos, numero_factura=None, info_autonomo=None, tipo="fa
         subtotal += importe_horas
         if mostrar_precio_hora:
             filas.append([
-                Paragraph(f"Mano de obra — {datos.get('concepto', '')}", estilo_normal),
+                Paragraph(f"Mano de obra — {datos.get('concepto') or ''}", estilo_normal),
                 Paragraph(f"{horas}h", estilo_derecha),
                 Paragraph(f"{precio_hora:.2f}€/h", estilo_derecha),
                 Paragraph(f"{importe_horas:.2f}€", estilo_derecha),
             ])
         else:
             filas.append([
-                Paragraph(f"Mano de obra — {datos.get('concepto', '')}", estilo_normal),
+                Paragraph(f"Mano de obra — {datos.get('concepto') or ''}", estilo_normal),
                 Paragraph("", estilo_derecha),
                 Paragraph("", estilo_derecha),
                 Paragraph(f"{importe_horas:.2f}€", estilo_derecha),
