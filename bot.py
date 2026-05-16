@@ -800,9 +800,10 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
         sin_trabajo = not (datos.get("concepto") or "").strip()
         if sin_cliente and sin_trabajo:
             await update.message.reply_text(
-                "No he podido extraer los datos del audio. "
+                "No he podido extraer los datos del audio.\n"
                 "Intenta incluir al menos el nombre del cliente "
-                "y el trabajo realizado."
+                "y el trabajo realizado.\n\n"
+                "🎙️ Manda un audio nuevo cuando quieras."
             )
             return ESPERANDO_AUDIO
 
@@ -1974,6 +1975,7 @@ async def ayuda(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "📋 Comandos (botón Menú ☰ abajo a la izquierda):\n"
         "• /start — Empezar o nueva factura\n"
         "• /perfil — Tus datos\n"
+        "• /privacidad — Política de privacidad\n"
         "• /cancelar — Cortar la acción actual\n"
         "• /ayuda — Este mensaje\n\n"
         "💬 ¿Algo no funciona o falta?\n"
