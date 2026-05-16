@@ -20,6 +20,9 @@ from telegram.ext import (
 # Carga variables de entorno del archivo .env
 load_dotenv(override=False)
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
+WEBHOOK_URL = os.getenv("WEBHOOK_URL")
+WEBHOOK_SECRET = os.getenv("WEBHOOK_SECRET")
+PORT = int(os.getenv("PORT", 8080))
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 ADMIN_CHAT_ID = int(os.getenv("ADMIN_CHAT_ID", "0"))
 
@@ -1823,6 +1826,15 @@ async def post_init(application):
         ("ayuda",    "Ayuda y contacto"),
         ("cancelar", "Cancelar acción actual"),
     ])
+    if WEBHOOK_URL:
+        await application.bot.set_webhook(
+            url=f"{WEBHOOK_URL}/webhook",
+            secret_token=WEBHOOK_SECRET,
+            allowed_updates=["message", "callback_query"]
+        )
+        print(f"Webhook registrado: {WEBHOOK_URL}/webhook")
+    else:
+        print("ADVERTENCIA: WEBHOOK_URL no definida")
 
 
 # ConversationHandler — gestiona el estado de cada usuario
@@ -1930,59 +1942,53 @@ import asyncio
 from aiohttp import web
 
 async def handle_webhook(request):
-    """Recibe updates de Telegram vía webhook"""
-    data = await request.json()
-    update = Update.de_json(data, app.bot)
-    await app.process_update(update)
+    secret = request.headers.get("X-Telegram-Bot-Api-Secret-Token")
+    if not secret or secret != WEBHOOK_SECRET:
+        return web.Response(status=403)
+    try:
+        data = await request.json()
+        update = Update.de_json(data, application.bot)
+        await application.process_update(update)
+    except Exception as e:
+        print(f"Error procesando update: {e}")
     return web.Response(status=200)
 
+async def handle_health(request):
+    return web.Response(text="OK", status=200)
+
 async def main():
-    """Arranca el bot en modo webhook"""
-    global app
-    app = ApplicationBuilder().token(TELEGRAM_TOKEN).post_init(post_init).build()
-
-    # Registra todos los handlers
-    app.add_handler(MessageHandler(filters.ALL, check_mantenimiento), group=-1)
-    app.add_handler(CommandHandler("admin_mantenimiento", check_mantenimiento), group=-1)
-    app.add_handler(conv_handler)
-    app.add_handler(CommandHandler("ayuda", ayuda))
-    app.add_handler(CommandHandler("privacidad", privacidad))
-    app.add_handler(CommandHandler("admin_reset", admin_reset))
-    app.add_handler(CommandHandler("admin_mantenimiento", admin_mantenimiento))
-    app.add_handler(CallbackQueryHandler(
-        handle_perfil_callbacks, pattern="^(perfil_|setiva_)"
-    ))
-    app.add_handler(CallbackQueryHandler(handle_manos_a_la_obra, pattern="^manos_a_la_obra$"))
-    app.add_handler(CallbackQueryHandler(handle_consent, pattern="^consent_"))
-
-    init_db()
-    crear_tablas_mantenimiento()
-
-    # Configura el webhook
-    webhook_url = os.getenv("WEBHOOK_URL")
-    port = int(os.getenv("PORT", 8080))
-
-    await app.bot.delete_webhook(drop_pending_updates=True)
-    await app.bot.set_webhook(
-        url=f"{webhook_url}/webhook",
-        allowed_updates=["message", "callback_query"]
-    )
-
-    # Servidor web para recibir los updates
     web_app = web.Application()
     web_app.router.add_post("/webhook", handle_webhook)
-    web_app.router.add_get("/health", lambda r: web.Response(text="OK"))
+    web_app.router.add_get("/health",   handle_health)
+    web_app.router.add_get("/",         handle_health)
 
     runner = web.AppRunner(web_app)
     await runner.setup()
-    site = web.TCPSite(runner, "0.0.0.0", port)
+    site = web.TCPSite(runner, "0.0.0.0", PORT)
+    await site.start()
+    print(f"Servidor HTTP activo en puerto {PORT}")
 
-    print(f"Bot activo en webhook — {webhook_url}/webhook")
+    async with application:
+        await application.start()
+        print("Bot activo en modo webhook")
+        await asyncio.Event().wait()
 
-    async with app:
-        await app.start()
-        await site.start()
-        await asyncio.Event().wait()  # mantiene el proceso vivo
+application = ApplicationBuilder().token(TELEGRAM_TOKEN).post_init(post_init).build()
+application.add_handler(MessageHandler(filters.ALL, check_mantenimiento), group=-1)
+application.add_handler(CommandHandler("admin_mantenimiento", check_mantenimiento), group=-1)
+application.add_handler(conv_handler)
+application.add_handler(CommandHandler("ayuda", ayuda))
+application.add_handler(CommandHandler("privacidad", privacidad))
+application.add_handler(CommandHandler("admin_reset", admin_reset))
+application.add_handler(CommandHandler("admin_mantenimiento", admin_mantenimiento))
+application.add_handler(CallbackQueryHandler(
+    handle_perfil_callbacks, pattern="^(perfil_|setiva_)"
+))
+application.add_handler(CallbackQueryHandler(handle_manos_a_la_obra, pattern="^manos_a_la_obra$"))
+application.add_handler(CallbackQueryHandler(handle_consent, pattern="^consent_"))
+
+init_db()
+crear_tablas_mantenimiento()
 
 if __name__ == "__main__":
     asyncio.run(main())
