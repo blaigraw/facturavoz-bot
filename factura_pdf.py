@@ -222,13 +222,14 @@ def generar_factura_pdf(datos, numero_factura=None, info_autonomo=None, tipo="fa
     if datos.get("materiales"):
         for material in datos["materiales"]:
             precio = material.get("precio")
-            if precio is None:
+            try:
+                precio_float = float(precio)
+                precio_display = f"{precio_float:.2f}€"
+                importe_display = f"{precio_float:.2f}€"
+                subtotal += precio_float
+            except (ValueError, TypeError):
                 precio_display = "Pendiente"
                 importe_display = "Pendiente"
-            else:
-                precio_display = f"{float(precio):.2f}€"
-                importe_display = f"{float(precio):.2f}€"
-                subtotal += float(precio)
             filas.append([
                 Paragraph(material.get("descripcion") or "—", estilo_normal),
                 Paragraph("1", estilo_derecha),

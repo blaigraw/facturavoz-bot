@@ -98,13 +98,19 @@ REGLAS:
 - materiales agrupados: SOLO agrupa materiales en un único ítem cuando el autónomo mencione explícitamente un precio total compartido entre varios con expresiones como "todo junto", "entre los dos", "en total", "todo eso junto". Ejemplo correcto: "el adhesivo y las crucetas, todo junto 8 euros" → {{"descripcion": "Adhesivo y crucetas", "precio": 8.0}}. Ejemplo incorrecto: agrupar materiales con precios distintos o cuando uno no tiene precio.
 - observaciones: solo si menciona explícitamente algo para anotar (pago en efectivo, garantía, certificado). Máximo 2 líneas. Si no → null"""
 
+def to_float(valor):
+    try:
+        return float(valor or 0)
+    except (ValueError, TypeError):
+        return 0.0
+
 def calcular_subtotal(datos):
     total_materiales = sum(
-        float(m.get("precio") or 0) for m in (datos.get("materiales") or [])
+        to_float(m.get("precio")) for m in (datos.get("materiales") or [])
         if m.get("precio") is not None
     )
-    total_horas = float(datos.get("horas") or 0) * float(datos.get("precio_hora") or 0)
-    total_desplazamiento = float(datos.get("desplazamiento") or 0)
+    total_horas = to_float(datos.get("horas")) * to_float(datos.get("precio_hora"))
+    total_desplazamiento = to_float(datos.get("desplazamiento"))
     return round(total_materiales + total_horas + total_desplazamiento, 2)
 
 def calcular_ajuste(datos: dict, iva_rate: float) -> dict | None:
@@ -117,7 +123,9 @@ def calcular_ajuste(datos: dict, iva_rate: float) -> dict | None:
     if precio_final is None:
         return None
 
-    precio_final = float(precio_final)
+    precio_final = to_float(precio_final)
+    if precio_final == 0.0:
+        return None
     subtotal = calcular_subtotal(datos)
 
     if iva_rate > 0:
