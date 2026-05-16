@@ -862,7 +862,7 @@ async def handle_confirmacion(update: Update, context: ContextTypes.DEFAULT_TYPE
         ]
 
         if materiales_sin_precio:
-            nombres = ", ".join(m["descripcion"] for m in materiales_sin_precio)
+            nombres = ", ".join(m.get("descripcion") or "Material sin nombre" for m in materiales_sin_precio)
             teclado_pendiente = InlineKeyboardMarkup([
                 [InlineKeyboardButton("✏️ Completar ahora", callback_data="editar")],
                 [InlineKeyboardButton("📋 Marcar como pendiente", callback_data="mat_pendiente")],
