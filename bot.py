@@ -48,6 +48,7 @@ REGISTRO_NUMERO_FACTURA = 19
 REGISTRO_NUMERO_PRESUPUESTO = 20
 REGISTRO_MOSTRAR_PRECIO_HORA = 21
 PERFIL_EDITANDO_CAMPO = 22
+AJUSTE_PRECIO = 23
 CONSENT = 99
 
 TECLADO_CONFIRMAR = InlineKeyboardMarkup([
@@ -105,6 +106,38 @@ def calcular_subtotal(datos):
     total_desplazamiento = datos.get("desplazamiento") or 0
     return round(total_materiales + total_horas + total_desplazamiento, 2)
 
+def calcular_ajuste(datos: dict, iva_rate: float) -> dict | None:
+    """
+    Devuelve desglose ajustado al precio_final o None si no hay precio_final.
+    Con IVA: base + cuota == total exacto (cuota absorbe descuadre de céntimos).
+    Sin IVA (ISP): ajuste directo sobre subtotal.
+    """
+    precio_final = datos.get("precio_final")
+    if precio_final is None:
+        return None
+
+    precio_final = float(precio_final)
+    subtotal = calcular_subtotal(datos)
+
+    if iva_rate > 0:
+        base = round(precio_final / (1 + iva_rate), 2)
+        cuota = round(precio_final - base, 2)
+        ajuste = round(base - subtotal, 2)
+        return {
+            "ajuste": ajuste,
+            "base_imponible": base,
+            "cuota_iva": cuota,
+            "total": precio_final,
+        }
+    else:
+        ajuste = round(precio_final - subtotal, 2)
+        return {
+            "ajuste": ajuste,
+            "base_imponible": None,
+            "cuota_iva": None,
+            "total": precio_final,
+        }
+
 def construir_resumen(datos, iva_porcentaje=0.21):
     """Construye el texto del resumen — factura o presupuesto"""
     total_horas = (datos["horas"] or 0) * (datos["precio_hora"] or 0)
@@ -146,11 +179,37 @@ def construir_resumen(datos, iva_porcentaje=0.21):
 
     iva_etiqueta = f"{int(iva_porcentaje * 100)}%" if iva_porcentaje > 0 else "0% — ISP"
     subtotal = calcular_subtotal(datos)
-    resumen += (
-        f"\n💰 *Subtotal: {subtotal}€*\n"
-        f"🧾 *IVA ({iva_etiqueta}): {round(subtotal * iva_porcentaje, 2)}€*\n"
-        f"💵 *TOTAL: {round(subtotal * (1 + iva_porcentaje), 2)}€*\n"
-    )
+    ajuste_resultado = calcular_ajuste(datos, iva_porcentaje)
+
+    if ajuste_resultado is None:
+        resumen += (
+            f"\n💰 *Subtotal: {subtotal}€*\n"
+            f"🧾 *IVA ({iva_etiqueta}): {round(subtotal * iva_porcentaje, 2)}€*\n"
+            f"💵 *TOTAL: {round(subtotal * (1 + iva_porcentaje), 2)}€*\n"
+            f"🎯 Ajuste precio: — ✏️\n"
+        )
+    elif iva_porcentaje > 0:
+        ajuste = ajuste_resultado["ajuste"]
+        signo_ajuste = f"+{ajuste}" if ajuste >= 0 else str(ajuste)
+        resumen += (
+            f"\n💰 *Subtotal: {subtotal}€*\n"
+            f"📊 *Ajuste: {signo_ajuste}€*\n"
+            f"🧾 *Base imponible: {ajuste_resultado['base_imponible']}€*\n"
+            f"🧾 *IVA ({iva_etiqueta}): {ajuste_resultado['cuota_iva']}€*\n"
+            f"💵 *TOTAL: {ajuste_resultado['total']}€*\n"
+            f"🎯 Ajuste precio: {ajuste_resultado['total']}€ ✏️\n"
+        )
+    else:
+        ajuste = ajuste_resultado["ajuste"]
+        signo_ajuste = f"+{ajuste}" if ajuste >= 0 else str(ajuste)
+        resumen += (
+            f"\n💰 *Subtotal: {subtotal}€*\n"
+            f"📊 *Ajuste: {signo_ajuste}€*\n"
+            f"💵 *TOTAL: {ajuste_resultado['total']}€*\n"
+            f"🎯 Ajuste precio: {ajuste_resultado['total']}€ ✏️\n"
+            f"_({iva_etiqueta})_\n"
+        )
+
     resumen += "\n_✏️ Pulsa *Editar campo* si necesitas corregir algo._\n\n¿Es correcto?"
     return resumen
 
@@ -198,6 +257,9 @@ def construir_teclado_campos():
         ],
         [
             InlineKeyboardButton("📝 Observaciones", callback_data="campo_observaciones"),
+        ],
+        [
+            InlineKeyboardButton("🎯 Ajuste precio", callback_data="campo_precio_final"),
         ],
      ])
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -957,6 +1019,17 @@ async def handle_confirmacion(update: Update, context: ContextTypes.DEFAULT_TYPE
     elif query.data.startswith("campo_"):
         campo = query.data.replace("campo_", "")
         context.user_data["campo_editando"] = campo
+
+        if campo == "precio_final":
+            await query.message.reply_text(
+                "🎯 *Precio final a cobrar*: escribe el importe total "
+                "(IVA incluido si aplica).\n"
+                "Ejemplo: _250_ o _250.50_\n"
+                "/cancelar para salir sin cambios.",
+                parse_mode="Markdown"
+            )
+            return AJUSTE_PRECIO
+
         nombres = {
             "cliente_nombre": "nombre del cliente",
             "cliente_direccion": "dirección del cliente",
@@ -1063,6 +1136,41 @@ Devuelve SOLO el JSON, sin texto adicional.
     contenido = respuesta.choices[0].message.content.strip()
     contenido = contenido.replace("```json", "").replace("```", "").strip()
     return json.loads(contenido)
+
+
+async def handle_ajuste_precio(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Recibe el precio final a cobrar, valida, deriva ajuste y vuelve al resumen."""
+    datos = context.user_data.get("datos_factura")
+    texto = update.message.text.strip().replace(",", ".")
+
+    try:
+        precio_final = float(texto)
+        if precio_final <= 0:
+            raise ValueError
+    except ValueError:
+        # No numérico o no positivo → cancel silencioso, vuelve al resumen
+        tipo = datos.get("tipo", "factura")
+        _cfg = cargar_config(update.effective_chat.id)
+        _iva = _cfg.get("iva", 0.21) if _cfg else 0.21
+        await update.message.reply_text(
+            construir_resumen(datos, iva_porcentaje=_iva),
+            parse_mode="Markdown",
+            reply_markup=construir_teclado_confirmacion(tipo)
+        )
+        return ESPERANDO_CONFIRMACION
+
+    datos["precio_final"] = round(precio_final, 2)
+    context.user_data["datos_factura"] = datos
+
+    tipo = datos.get("tipo", "factura")
+    _cfg = cargar_config(update.effective_chat.id)
+    _iva = _cfg.get("iva", 0.21) if _cfg else 0.21
+    await update.message.reply_text(
+        construir_resumen(datos, iva_porcentaje=_iva),
+        parse_mode="Markdown",
+        reply_markup=construir_teclado_confirmacion(tipo)
+    )
+    return ESPERANDO_CONFIRMACION
 
 
 async def handle_valor_campo(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -1922,6 +2030,9 @@ conv_handler = ConversationHandler(
             MessageHandler(filters.VOICE, handle_voice_campo),
             MessageHandler(filters.TEXT & ~filters.COMMAND, handle_valor_campo),
             CallbackQueryHandler(handle_perfil_callbacks, pattern="^(perfil_|setiva_)"),
+        ],
+        AJUSTE_PRECIO: [
+            MessageHandler(filters.TEXT & ~filters.COMMAND, handle_ajuste_precio),
         ],
         ESPERANDO_IBAN: [
             MessageHandler(filters.TEXT & ~filters.COMMAND, handle_iban),

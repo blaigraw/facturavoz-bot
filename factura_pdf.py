@@ -7,6 +7,30 @@ from reportlab.lib import colors
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
 from reportlab.lib.enums import TA_RIGHT, TA_CENTER, TA_LEFT
 
+def _calcular_ajuste(subtotal: float, datos: dict, iva_rate: float) -> dict | None:
+    """Lógica de ajuste independiente de la plantilla PDF — misma aritmética que bot.py."""
+    precio_final = datos.get("precio_final")
+    if precio_final is None:
+        return None
+    precio_final = float(precio_final)
+    if iva_rate > 0:
+        base = round(precio_final / (1 + iva_rate), 2)
+        cuota = round(precio_final - base, 2)
+        return {
+            "ajuste": round(base - subtotal, 2),
+            "base_imponible": base,
+            "cuota_iva": cuota,
+            "total": precio_final,
+        }
+    else:
+        return {
+            "ajuste": round(precio_final - subtotal, 2),
+            "base_imponible": None,
+            "cuota_iva": None,
+            "total": precio_final,
+        }
+
+
 def generar_factura_pdf(datos, numero_factura=None, info_autonomo=None, tipo="factura",
                         iva_porcentaje=0.21, es_prueba=False):
 
@@ -266,36 +290,81 @@ def generar_factura_pdf(datos, numero_factura=None, info_autonomo=None, tipo="fa
 
     # ── TOTALES ───────────────────────────────────────────
     iva_porcentaje_display = f"{int(iva_porcentaje * 100)}%" if iva_porcentaje > 0 else "Exento"
-    iva = subtotal * iva_porcentaje
-    total = subtotal + iva
+    ajuste_resultado = _calcular_ajuste(subtotal, datos, iva_porcentaje)
 
-    fila_iva = ["IVA:", "Exento"] if iva_porcentaje == 0.0 else [f"IVA ({iva_porcentaje_display}):", f"{iva:.2f}€"]
-    tabla_totales = Table([
-        ["Subtotal:", f"{subtotal:.2f}€"],
-        fila_iva,
-    ], colWidths=[14*cm, 3*cm])
-    tabla_totales.setStyle(TableStyle([
+    _estilo_tabla = TableStyle([
         ("ALIGN", (1,0), (1,-1), "RIGHT"),
         ("FONTSIZE", (0,0), (-1,-1), 10),
         ("TEXTCOLOR", (0,0), (-1,-1), colors.HexColor("#2C3E50")),
         ("TOPPADDING", (0,0), (-1,-1), 4),
         ("BOTTOMPADDING", (0,0), (-1,-1), 4),
-    ]))
-    elementos.append(tabla_totales)
-    elementos.append(Spacer(1, 0.2*cm))
-
-    # Fila de total con fondo oscuro
-    tabla_total = Table(
-        [[Paragraph(f"TOTAL: {total:.2f}€", estilo_total)]],
-        colWidths=[17*cm]
-    )
-    tabla_total.setStyle(TableStyle([
+    ])
+    _estilo_total_tabla = TableStyle([
         ("BACKGROUND", (0,0), (-1,-1), colors.HexColor("#2C3E50")),
         ("TOPPADDING", (0,0), (-1,-1), 10),
         ("BOTTOMPADDING", (0,0), (-1,-1), 10),
         ("RIGHTPADDING", (0,0), (-1,-1), 10),
-    ]))
-    elementos.append(tabla_total)
+    ])
+
+    if ajuste_resultado is None:
+        iva = subtotal * iva_porcentaje
+        total = subtotal + iva
+        fila_iva = ["IVA:", "Exento"] if iva_porcentaje == 0.0 else [f"IVA ({iva_porcentaje_display}):", f"{iva:.2f}€"]
+        tabla_totales = Table([
+            ["Subtotal:", f"{subtotal:.2f}€"],
+            fila_iva,
+        ], colWidths=[14*cm, 3*cm])
+        tabla_totales.setStyle(_estilo_tabla)
+        elementos.append(tabla_totales)
+        elementos.append(Spacer(1, 0.2*cm))
+        tabla_total = Table(
+            [[Paragraph(f"TOTAL: {total:.2f}€", estilo_total)]],
+            colWidths=[17*cm]
+        )
+        tabla_total.setStyle(_estilo_total_tabla)
+        elementos.append(tabla_total)
+
+    elif iva_porcentaje > 0:
+        ajuste = ajuste_resultado["ajuste"]
+        signo = f"+{ajuste:.2f}" if ajuste >= 0 else f"{ajuste:.2f}"
+        tabla_totales = Table([
+            ["Subtotal:", f"{subtotal:.2f}€"],
+            [f"Ajuste:", f"{signo}€"],
+            ["Base imponible:", f"{ajuste_resultado['base_imponible']:.2f}€"],
+            [f"IVA ({iva_porcentaje_display}):", f"{ajuste_resultado['cuota_iva']:.2f}€"],
+        ], colWidths=[14*cm, 3*cm])
+        tabla_totales.setStyle(_estilo_tabla)
+        elementos.append(tabla_totales)
+        elementos.append(Spacer(1, 0.2*cm))
+        tabla_total = Table(
+            [[Paragraph(f"TOTAL: {ajuste_resultado['total']:.2f}€", estilo_total)]],
+            colWidths=[17*cm]
+        )
+        tabla_total.setStyle(_estilo_total_tabla)
+        elementos.append(tabla_total)
+
+    else:
+        ajuste = ajuste_resultado["ajuste"]
+        signo = f"+{ajuste:.2f}" if ajuste >= 0 else f"{ajuste:.2f}"
+        tabla_totales = Table([
+            ["Subtotal:", f"{subtotal:.2f}€"],
+            ["Ajuste:", f"{signo}€"],
+        ], colWidths=[14*cm, 3*cm])
+        tabla_totales.setStyle(_estilo_tabla)
+        elementos.append(tabla_totales)
+        elementos.append(Spacer(1, 0.2*cm))
+        tabla_total = Table(
+            [[Paragraph(f"TOTAL: {ajuste_resultado['total']:.2f}€", estilo_total)]],
+            colWidths=[17*cm]
+        )
+        tabla_total.setStyle(_estilo_total_tabla)
+        elementos.append(tabla_total)
+        elementos.append(Spacer(1, 0.2*cm))
+        elementos.append(Paragraph(
+            "Operación sujeta a inversión del sujeto pasivo (IVA: 0% — ISP).",
+            ParagraphStyle("isp_nota", parent=styles["Normal"],
+                fontSize=8, textColor=colors.HexColor("#7F8C8D"), alignment=TA_LEFT)
+        ))
 
     # ── PIE DE PÁGINA ─────────────────────────────────────
     elementos.append(Spacer(1, 1*cm))
