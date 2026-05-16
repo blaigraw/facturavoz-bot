@@ -1138,6 +1138,12 @@ Devuelve SOLO el JSON, sin texto adicional.
     return json.loads(contenido)
 
 
+async def handle_ajuste_precio_audio_rechazado(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text(
+        "Escribe el precio final como número (ej: 250)"
+    )
+    return AJUSTE_PRECIO
+
 async def handle_ajuste_precio(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Recibe el precio final a cobrar, valida, deriva ajuste y vuelve al resumen."""
     datos = context.user_data.get("datos_factura")
@@ -2033,6 +2039,7 @@ conv_handler = ConversationHandler(
         ],
         AJUSTE_PRECIO: [
             MessageHandler(filters.TEXT & ~filters.COMMAND, handle_ajuste_precio),
+            MessageHandler(filters.VOICE | filters.AUDIO, handle_ajuste_precio_audio_rechazado),
         ],
         ESPERANDO_IBAN: [
             MessageHandler(filters.TEXT & ~filters.COMMAND, handle_iban),
