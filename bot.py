@@ -1273,6 +1273,17 @@ async def handle_valor_campo(update: Update, context: ContextTypes.DEFAULT_TYPE)
         )
         return ESPERANDO_CONFIRMACION
 
+    _CAMPOS_NUMERICOS = {"horas", "precio_hora", "desplazamiento"}
+    if campo in _CAMPOS_NUMERICOS:
+        texto_num = valor.strip()
+        valor_num = to_float(texto_num)
+        if valor_num == 0.0 and texto_num.replace(",", ".") not in ("0", "0.0", "gratis", "gratuito"):
+            await update.message.reply_text(
+                "Este campo debe ser un número (ej: 2 o 2.5). "
+                "Inténtalo de nuevo."
+            )
+            return ESPERANDO_VALOR_CAMPO
+
     await update.message.reply_text("⚙️ Interpretando...")
 
     try:
