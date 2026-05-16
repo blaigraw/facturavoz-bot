@@ -150,6 +150,19 @@ def calcular_ajuste(datos: dict, iva_rate: float) -> dict | None:
             "total": precio_final,
         }
 
+def horas_a_texto(h) -> str:
+    try:
+        h = float(h or 0)
+    except (ValueError, TypeError):
+        return "—"
+    horas = int(h)
+    minutos = round((h - horas) * 60)
+    if minutos == 0:
+        return f"{horas}h" if horas > 0 else "0h"
+    if horas == 0:
+        return f"{minutos}min"
+    return f"{horas}h {minutos}min"
+
 def construir_resumen(datos, iva_porcentaje=0.21):
     """Construye el texto del resumen — factura o presupuesto"""
     total_horas = (datos["horas"] or 0) * (datos["precio_hora"] or 0)
@@ -180,7 +193,7 @@ def construir_resumen(datos, iva_porcentaje=0.21):
     if datos.get("precio_hora_es_default") and datos.get("precio_hora"):
         precio_hora_label += " (tarifa habitual)"
     resumen += (
-        f"\n⏱️ *Horas:* {datos['horas'] or 0}h x {precio_hora_label} = {total_horas}€\n"
+        f"\n⏱️ *Horas:* {horas_a_texto(datos['horas'])} x {precio_hora_label} = {total_horas}€\n"
         f"🚗 *Desplazamiento:* {datos['desplazamiento'] or 0}€\n"
         f"📅 *Fecha:* {datos['fecha'] or 'No especificada'}\n"
     )
