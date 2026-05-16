@@ -1938,57 +1938,21 @@ conv_handler = ConversationHandler(
     ]
 )
 
-import asyncio
-from aiohttp import web
-
-async def handle_webhook(request):
-    secret = request.headers.get("X-Telegram-Bot-Api-Secret-Token")
-    if not secret or secret != WEBHOOK_SECRET:
-        return web.Response(status=403)
-    try:
-        data = await request.json()
-        update = Update.de_json(data, application.bot)
-        await application.process_update(update)
-    except Exception as e:
-        print(f"Error procesando update: {e}")
-    return web.Response(status=200)
-
-async def handle_health(request):
-    return web.Response(text="OK", status=200)
-
-async def main():
-    web_app = web.Application()
-    web_app.router.add_post("/webhook", handle_webhook)
-    web_app.router.add_get("/health",   handle_health)
-    web_app.router.add_get("/",         handle_health)
-
-    runner = web.AppRunner(web_app)
-    await runner.setup()
-    site = web.TCPSite(runner, "0.0.0.0", PORT)
-    await site.start()
-    print(f"Servidor HTTP activo en puerto {PORT}")
-
-    async with application:
-        await application.start()
-        print("Bot activo en modo webhook")
-        await asyncio.Event().wait()
-
-application = ApplicationBuilder().token(TELEGRAM_TOKEN).post_init(post_init).build()
-application.add_handler(MessageHandler(filters.ALL, check_mantenimiento), group=-1)
-application.add_handler(CommandHandler("admin_mantenimiento", check_mantenimiento), group=-1)
-application.add_handler(conv_handler)
-application.add_handler(CommandHandler("ayuda", ayuda))
-application.add_handler(CommandHandler("privacidad", privacidad))
-application.add_handler(CommandHandler("admin_reset", admin_reset))
-application.add_handler(CommandHandler("admin_mantenimiento", admin_mantenimiento))
-application.add_handler(CallbackQueryHandler(
+app = ApplicationBuilder().token(TELEGRAM_TOKEN).post_init(post_init).build()
+app.add_handler(MessageHandler(filters.ALL, check_mantenimiento), group=-1)
+app.add_handler(CommandHandler("admin_mantenimiento", check_mantenimiento), group=-1)
+app.add_handler(conv_handler)
+app.add_handler(CommandHandler("ayuda", ayuda))
+app.add_handler(CommandHandler("privacidad", privacidad))
+app.add_handler(CommandHandler("admin_reset", admin_reset))
+app.add_handler(CommandHandler("admin_mantenimiento", admin_mantenimiento))
+app.add_handler(CallbackQueryHandler(
     handle_perfil_callbacks, pattern="^(perfil_|setiva_)"
 ))
-application.add_handler(CallbackQueryHandler(handle_manos_a_la_obra, pattern="^manos_a_la_obra$"))
-application.add_handler(CallbackQueryHandler(handle_consent, pattern="^consent_"))
+app.add_handler(CallbackQueryHandler(handle_manos_a_la_obra, pattern="^manos_a_la_obra$"))
+app.add_handler(CallbackQueryHandler(handle_consent, pattern="^consent_"))
 
 init_db()
 crear_tablas_mantenimiento()
 
-if __name__ == "__main__":
-    asyncio.run(main())
+app.run_polling()
