@@ -1973,6 +1973,16 @@ async def main():
     async with application:
         await application.start()
         print("Bot activo en modo webhook")
+        if WEBHOOK_URL and WEBHOOK_SECRET:
+            await application.bot.set_webhook(
+                url=f"{WEBHOOK_URL}/webhook",
+                secret_token=WEBHOOK_SECRET,
+                allowed_updates=["message", "callback_query"]
+            )
+            print(f"Webhook registrado: {WEBHOOK_URL}/webhook")
+        else:
+            print(f"WEBHOOK_URL: {WEBHOOK_URL}")
+            print(f"WEBHOOK_SECRET definido: {bool(WEBHOOK_SECRET)}")
         await asyncio.Event().wait()
 
 application = ApplicationBuilder().token(TELEGRAM_TOKEN).post_init(post_init).build()
