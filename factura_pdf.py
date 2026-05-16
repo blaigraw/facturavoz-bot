@@ -25,7 +25,7 @@ def generar_factura_pdf(datos, numero_factura=None, info_autonomo=None, tipo="fa
     # Nombre del archivo — incluye fecha y cliente para fácil identificación
     fecha_hoy = datetime.now().strftime("%Y%m%d")
     import re
-    cliente_slug = re.sub(r'[^a-zA-Z0-9]', '_', datos.get("cliente_nombre", "cliente"))[:20]
+    cliente_slug = re.sub(r'[^a-zA-Z0-9]', '_', datos.get("cliente_nombre") or "cliente")[:20]
     prefijo_archivo = "presupuesto" if tipo == "presupuesto" else "factura"
     # Crea la carpeta si no existe
     os.makedirs("documentos", exist_ok=True)
