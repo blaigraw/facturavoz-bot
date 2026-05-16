@@ -106,15 +106,15 @@ def generar_factura_pdf(datos, numero_factura=None, info_autonomo=None, tipo="fa
     # ── CABECERA ──────────────────────────────────────────
     # Columna izquierda — datos del autónomo con espaciado entre campos
     col_izquierda = [
-        Paragraph(info_autonomo["nombre"], estilo_titulo),
+        Paragraph(info_autonomo.get("nombre") or "—", estilo_titulo),
         Spacer(1, 0.3*cm),
-        Paragraph(f"NIF: {info_autonomo['nif']}", estilo_subtitulo),
+        Paragraph(f"NIF: {info_autonomo.get('nif') or '—'}", estilo_subtitulo),
         Spacer(1, 0.15*cm),
-        Paragraph(info_autonomo["direccion"], estilo_subtitulo),
+        Paragraph(info_autonomo.get("direccion") or "—", estilo_subtitulo),
         Spacer(1, 0.15*cm),
-        Paragraph(f"Tel: {info_autonomo['telefono']}", estilo_subtitulo),
+        Paragraph(f"Tel: {info_autonomo.get('telefono') or '—'}", estilo_subtitulo),
         Spacer(1, 0.15*cm),
-        Paragraph(info_autonomo["email"], estilo_subtitulo),
+        Paragraph(info_autonomo.get("email") or "—", estilo_subtitulo),
     ]
 
     # Columna derecha — PRESUPUESTO O FACTURA y datos bien separados
