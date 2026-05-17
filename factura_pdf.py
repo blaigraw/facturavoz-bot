@@ -36,15 +36,15 @@ def generar_factura_pdf(datos, numero_factura=None, info_autonomo=None, tipo="fa
 
     if es_prueba or not info_autonomo:
         info_autonomo = {
-            "nombre": "Antonio Martínez García",
-            "nif": "47382910B",
-            "direccion": "C/ de la Construcción, 14, 2ºA, 28045 Madrid",
-            "telefono": "612 345 678",
-            "email": "antonio.martinez@gmail.com",
+            "nombre": "EMPRESA DE EJEMPLO S.L.",
+            "nif": "B00000000",
+            "direccion": "Calle de Ejemplo, 1, 28000 Madrid",
+            "telefono": "000 000 000",
+            "email": "ejemplo@facturavoz.es",
             "iban": None,
             "mostrar_iban": False
         }
-        numero_factura = "PRUEBA"
+        numero_factura = "EJEMPLO-001"
 
     # Nombre del archivo — incluye fecha y cliente para fácil identificación
     fecha_hoy = datetime.now().strftime("%Y%m%d")
@@ -398,13 +398,30 @@ def generar_factura_pdf(datos, numero_factura=None, info_autonomo=None, tipo="fa
     def marca_agua(canvas_obj, doc_obj):
         if not es_prueba:
             return
-        canvas_obj.saveState()
-        canvas_obj.setFont("Helvetica-Bold", 70)
-        canvas_obj.setFillGray(0.82, alpha=0.18)
         width, height = A4
-        canvas_obj.translate(width / 2, height / 2)
-        canvas_obj.rotate(45)
-        canvas_obj.drawCentredString(0, 0, "PRUEBA")
+
+        # CAPA 1: Banda roja superior
+        canvas_obj.saveState()
+        BANDA_H = 28
+        canvas_obj.setFillColor(colors.HexColor("#CC0000"))
+        canvas_obj.rect(0, height - BANDA_H, width, BANDA_H, fill=1, stroke=0)
+        canvas_obj.setFont("Helvetica-Bold", 10)
+        canvas_obj.setFillColor(colors.white)
+        canvas_obj.drawCentredString(
+            width / 2,
+            height - BANDA_H + 9,
+            "DOCUMENTO DE EJEMPLO  ·  SIN VALIDEZ FISCAL"
+        )
+        canvas_obj.restoreState()
+
+        # CAPA 2: Watermark diagonal sobre zona de importes
+        canvas_obj.saveState()
+        canvas_obj.setFont("Helvetica-Bold", 60)
+        canvas_obj.setFillColor(colors.HexColor("#CC0000"))
+        canvas_obj.setFillAlpha(0.22)
+        canvas_obj.translate(width / 2, 220)
+        canvas_obj.rotate(35)
+        canvas_obj.drawCentredString(0, 0, "SIN VALIDEZ FISCAL")
         canvas_obj.restoreState()
 
     doc.build(elementos,
