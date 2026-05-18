@@ -81,6 +81,9 @@ def generar_factura_pdf(datos, numero_factura=None, info_autonomo=None, tipo="fa
         textColor=colors.HexColor("#2C3E50"),
         spaceAfter=0.3*cm
     )
+
+    if es_prueba:
+        estilo_titulo.fontSize = 16
     
     estilo_subtitulo = ParagraphStyle(
         "subtitulo",
