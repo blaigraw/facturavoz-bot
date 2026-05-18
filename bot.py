@@ -1413,12 +1413,21 @@ async def generar_y_enviar_pdf(query, context):
         "accion_final": "confirmado",
         "segundos_hasta_confirmacion": segundos
     })
+    if modo_prueba:
+        caption_pdf = (
+            "⚠️ *Este PDF es un ejemplo — no tiene validez fiscal.*\n"
+            "No lo envíes a clientes ni lo uses como documento real."
+        )
+    else:
+        caption_pdf = (
+            f"{emoji} {prefijo.capitalize()} *{numero}* generada.\n"
+            "Manda un audio cuando quieras crear la siguiente."
+        )
     with open(nombre_pdf, "rb") as pdf:
         await query.message.reply_document(
             document=pdf,
             filename=f"{prefijo}_{numero}.pdf",
-            caption=f"{emoji} {prefijo.capitalize()} *{numero}* generada.\n"
-                    f"Manda un audio cuando quieras crear la siguiente.",
+            caption=caption_pdf,
             parse_mode="Markdown"
         )
     if modo_prueba:
@@ -1429,10 +1438,9 @@ async def generar_y_enviar_pdf(query, context):
                 "🔄 Hacer otra prueba", callback_data="onboarding_prueba")]
         ])
         await query.message.reply_text(
-            "¿Ves qué fácil? 🎉\n\n"
-            "FacturaVoz está en beta — es completamente gratis.\n\n"
-            "Configura tu perfil en 2 minutos y empieza "
-            "a generar facturas reales con tus datos. 👇",
+            "¿Ves cómo funciona? 🙌\n\n"
+            "Ahora configura tu perfil en 2 minutos\n"
+            "y empieza a generar *facturas reales* con tus datos. 👇",
             parse_mode="Markdown",
             reply_markup=teclado_post_prueba
         )
