@@ -83,7 +83,9 @@ def generar_factura_pdf(datos, numero_factura=None, info_autonomo=None, tipo="fa
     )
 
     nombre_emisor = info_autonomo.get("nombre") or ""
-    if len(nombre_emisor) > 35:
+    if len(nombre_emisor) > 50:
+        estilo_titulo.fontSize = 12
+    elif len(nombre_emisor) > 35:
         estilo_titulo.fontSize = 16
     elif len(nombre_emisor) > 25:
         estilo_titulo.fontSize = 20
