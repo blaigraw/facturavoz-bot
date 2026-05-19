@@ -100,7 +100,23 @@ REGLAS:
 - materiales con precio individual: si cada material tiene su propio precio mencionado explícitamente → crea un ítem separado por material.
 - materiales agrupados: SOLO agrupa materiales en un único ítem cuando el autónomo mencione explícitamente un precio total compartido entre varios con expresiones como "todo junto", "entre los dos", "en total", "todo eso junto". Ejemplo correcto: "el adhesivo y las crucetas, todo junto 8 euros" → {{"descripcion": "Adhesivo y crucetas", "precio": 8.0}}. Ejemplo incorrecto: agrupar materiales con precios distintos o cuando uno no tiene precio.
 - observaciones: solo si menciona explícitamente algo para anotar (pago en efectivo, garantía, certificado). Máximo 2 líneas. Si no → null
-- mano de obra sin desglose horario: si el autónomo menciona un importe plano de trabajo sin especificar horas ni precio por hora (ej: "300€ de mano de obra", "cobro 150 de trabajo", "solo mano de obra 80 euros", "doscientos de mano de obra") → añádelo a materiales como {{"descripcion": "Mano de obra", "precio": <importe exacto mencionado en número>}}. NUNCA deduzcas horas ni precio_hora. NUNCA repartas el importe. Copia el número exacto que dijo el autónomo como float. Si el importe está en palabras, conviértelo a número (ej: "doscientos" → 200.0). Esta regla SOLO se dispara ÚNICAMENTE si el audio NO menciona horas ni precio por hora. Si el audio menciona horas o precio/hora → usa horas y precio_hora, NO crees línea "Mano de obra" en materiales. Ejemplo incorrecto que NUNCA debes hacer: audio "3 horas a 35€" → NO generar {{"descripcion": "Mano de obra", "precio": 105.0}}."""
+- mano de obra sin desglose horario: si el autónomo menciona un importe plano de trabajo sin especificar horas ni precio por hora (ej: "300€ de mano de obra", "cobro 150 de trabajo", "solo mano de obra 80 euros", "doscientos de mano de obra") → añádelo a materiales como {{"descripcion": "Mano de obra", "precio": <importe exacto mencionado en número>}}. NUNCA deduzcas horas ni precio_hora. NUNCA repartas el importe. Copia el número exacto que dijo el autónomo como float. Si el importe está en palabras, conviértelo a número (ej: "doscientos" → 200.0). Esta regla SOLO se dispara ÚNICAMENTE si el audio NO menciona horas ni precio por hora. Si el audio menciona horas o precio/hora → usa horas y precio_hora, NO crees línea "Mano de obra" en materiales. Ejemplo incorrecto que NUNCA debes hacer: audio "3 horas a 35€" → NO generar {{"descripcion": "Mano de obra", "precio": 105.0}}.
+
+JERARQUÍA DE EXTRACCIÓN — cuando hay conflicto entre campos:
+- Todo importe mencionado en el audio debe aparecer exactamente una vez. NUNCA dupliques un importe en dos campos distintos.
+- Si el audio menciona horas (con o sin precio/hora) → usa horas y precio_hora. No crees ninguna línea "Mano de obra" en materiales. Esto aplica aunque el audio también mencione un precio total.
+- Si el audio menciona materiales con precios → extráelos todos en materiales. Las horas no borran ni desplazan materiales. Horas y materiales coexisten en el mismo JSON.
+- Si un importe es ambiguo (no queda claro si es material, mano de obra o precio total) → ponlo en materiales con la descripción más fiel a lo que dijo el autónomo, precio exacto mencionado. NUNCA inventes un importe que no aparezca en el audio.
+- NUNCA generes un importe que el autónomo no haya mencionado explícitamente. Si el audio no dice un número → null, no un valor estimado ni calculado.
+
+Ejemplo correcto con horas + material:
+  audio "Alicia, barandilla 500€ y cuatro horas más o menos"
+  → materiales: [{{"descripcion": "Barandilla", "precio": 500.0}}], horas: 4, precio_hora: null
+  → NO vaciar materiales. NO crear "Mano de obra" en materiales.
+
+Ejemplo incorrecto que NUNCA debes hacer:
+  audio "dos horas, grifo roto, no recuerdo el precio"
+  → NUNCA generar {{"descripcion": "Mano de obra", "precio": 70.0}} ni ningún importe no mencionado."""
 
 def to_float(valor):
     try:

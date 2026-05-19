@@ -82,9 +82,17 @@ def generar_factura_pdf(datos, numero_factura=None, info_autonomo=None, tipo="fa
         spaceAfter=0.3*cm
     )
 
+    nombre_emisor = info_autonomo.get("nombre") or ""
+    nombre_emisor_spacer = 0.05*cm if len(nombre_emisor) > 35 else 0.3*cm
+    if len(nombre_emisor) > 50:
+        estilo_titulo.fontSize = 12
+    elif len(nombre_emisor) > 35:
+        estilo_titulo.fontSize = 16
+    elif len(nombre_emisor) > 25:
+        estilo_titulo.fontSize = 20
     if es_prueba:
         estilo_titulo.fontSize = 16
-    
+
     estilo_subtitulo = ParagraphStyle(
         "subtitulo",
         parent=styles["Normal"],
@@ -134,7 +142,7 @@ def generar_factura_pdf(datos, numero_factura=None, info_autonomo=None, tipo="fa
     # Columna izquierda — datos del autónomo con espaciado entre campos
     col_izquierda = [
         Paragraph(info_autonomo.get("nombre") or "—", estilo_titulo),
-        Spacer(1, 0.3*cm),
+        Spacer(1, nombre_emisor_spacer),
         Paragraph(f"NIF: {info_autonomo.get('nif') or '—'}", estilo_subtitulo),
         Spacer(1, 0.15*cm),
         Paragraph(info_autonomo.get("direccion") or "—", estilo_subtitulo),
@@ -252,14 +260,14 @@ def generar_factura_pdf(datos, numero_factura=None, info_autonomo=None, tipo="fa
         subtotal += importe_horas
         if mostrar_precio_hora:
             filas.append([
-                Paragraph(f"Mano de obra — {datos.get('concepto') or ''}", estilo_normal),
+                Paragraph(f"Mano de obra{' — ' + (datos.get('concepto') or '') if datos.get('concepto') else ''}", estilo_normal),
                 Paragraph(f"{horas}h", estilo_derecha),
                 Paragraph(f"{precio_hora:.2f}€/h", estilo_derecha),
                 Paragraph(f"{importe_horas:.2f}€", estilo_derecha),
             ])
         else:
             filas.append([
-                Paragraph(f"Mano de obra — {datos.get('concepto') or ''}", estilo_normal),
+                Paragraph(f"Mano de obra{' — ' + (datos.get('concepto') or '') if datos.get('concepto') else ''}", estilo_normal),
                 Paragraph("", estilo_derecha),
                 Paragraph("", estilo_derecha),
                 Paragraph(f"{importe_horas:.2f}€", estilo_derecha),
