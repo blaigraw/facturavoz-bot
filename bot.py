@@ -1465,7 +1465,8 @@ async def generar_y_enviar_pdf(query, context):
     else:
         caption_pdf = (
             f"{emoji} {prefijo.capitalize()} *{numero}* generada.\n"
-            "Manda un audio cuando quieras crear la siguiente."
+            "Pulsa el archivo de arriba para abrirlo.\n"
+            "Cuando quieras crear la siguiente, manda un audio."
         )
     with open(nombre_pdf, "rb") as pdf:
         await query.message.reply_document(
@@ -1543,8 +1544,11 @@ async def generar_y_enviar_pdf_texto(update, context):
         await update.message.reply_document(
             document=pdf,
             filename=f"{prefijo}_{numero}.pdf",
-            caption=f"{emoji} {prefijo.capitalize()} *{numero}* generada.\n"
-                    f"Manda un audio cuando quieras crear la siguiente.",
+            caption=(
+                f"{emoji} {prefijo.capitalize()} *{numero}* generada.\n"
+                "Pulsa el archivo de arriba para abrirlo.\n"
+                "Cuando quieras crear la siguiente, manda un audio."
+            ),
             parse_mode="Markdown"
         )
     context.user_data.clear()
@@ -1997,7 +2001,8 @@ async def handle_consent(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await query.edit_message_text(
                 "Ya has visto cómo funciona FacturaVoz 😊\n\n"
                 "Para seguir necesitas configurar tu perfil.\n"
-                "Son 2 minutos — solo una vez.",
+                "Son 2 minutos — solo una vez."
+                "\n👇 *¡Pulsa el botón para empezar!* 👇",
                 reply_markup=teclado
             )
             return ONBOARDING_REGISTRO
@@ -2007,7 +2012,8 @@ async def handle_consent(update: Update, context: ContextTypes.DEFAULT_TYPE):
             ]])
             await query.edit_message_text(
                 "👋 Bienvenido a *FacturaVoz*\n\n"
-                "Graba un audio describiendo el trabajo y te genero la factura al momento.",
+                "Graba un audio describiendo el trabajo y te genero la factura al momento."
+                "\n👇 *¡Pulsa el botón para empezar!* 👇",
                 parse_mode="Markdown",
                 reply_markup=teclado
             )
@@ -2032,7 +2038,8 @@ async def handle_onboarding_prueba(update: Update, context: ContextTypes.DEFAULT
         await query.edit_message_text(
             "Ya has visto cómo funciona FacturaVoz 😊\n\n"
             "Para seguir necesitas configurar tu perfil.\n"
-            "Son 2 minutos — solo una vez.",
+            "Son 2 minutos — solo una vez."
+            "\n👇 *¡Pulsa el botón para empezar!* 👇",
             reply_markup=teclado
         )
         return ONBOARDING_REGISTRO
@@ -2062,8 +2069,10 @@ async def handle_onboarding_registro(update: Update, context: ContextTypes.DEFAU
     query = update.callback_query
     await query.answer()
     await query.edit_message_text(
-        "Vamos a configurar tu perfil. Tarda menos de un minuto.\n\n"
+        "Vamos a configurar tu perfil. Serán 2 minutos.\n\n"
         "A cada pregunta puedes responder escribiendo o mandando un audio — como quieras.\n\n"
+        "Si no tienes todos los datos a mano, no pasa nada — puedes completarlos después desde tu perfil.\n"
+        "Y si te equivocas en algo, también puedes corregirlo.\n\n"
         "¿Cuál es tu nombre completo?"
     )
     return REGISTRO_NOMBRE
