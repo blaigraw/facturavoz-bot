@@ -500,7 +500,7 @@ async def handle_confirmacion_registro(update: Update, context: ContextTypes.DEF
         "nombre":         (REGISTRO_NIF,               "¿Cuál es tu NIF o CIF?\n\nEjemplo: 12345678A"),
         "nif":            (REGISTRO_DIRECCION,          "¿Cuál es tu dirección completa?\n\nEjemplo: Calle Mayor 1, 08001 Barcelona"),
         "direccion":      (REGISTRO_TELEFONO,           "¿Cuál es tu teléfono de contacto?"),
-        "telefono":       (REGISTRO_EMAIL,              "¿Cuál es tu email?"),
+        "telefono":       (REGISTRO_EMAIL,              "¿Cuál es tu email?\n\nEste campo recomendamos escribirlo para evitar errores, disculpa"),
         "actividad":      (REGISTRO_NUMERO_FACTURA,     "¿Por qué número de factura vas este año?\n\nEscribe el número de tu última factura. Si es la primera, escribe 0."),
         "numero_factura": (REGISTRO_NUMERO_PRESUPUESTO, "¿Y por qué número de presupuesto vas este año?\n\nEscribe el número de tu último presupuesto. Si es el primero, escribe 0."),
     }
@@ -1465,8 +1465,9 @@ async def generar_y_enviar_pdf(query, context):
     else:
         caption_pdf = (
             f"{emoji} {prefijo.capitalize()} *{numero}* generada.\n"
-            "Pulsa el archivo de arriba para abrirlo.\n"
-            "Cuando quieras crear la siguiente, manda un audio."
+            "⬆️ Pulsa el archivo de arriba para abrirlo.⬆️\n\n"
+            "Cuando quieras crear el siguiente documento, "
+            "manda un audio directamente o pulsa los botones que aparecen abajo."
         )
     with open(nombre_pdf, "rb") as pdf:
         await query.message.reply_document(
@@ -1483,9 +1484,12 @@ async def generar_y_enviar_pdf(query, context):
                 "🔄 Hacer otra prueba", callback_data="onboarding_prueba")]
         ])
         await query.message.reply_text(
-            "¿Ves cómo funciona? 🙌\n\n"
-            "Ahora configura tu perfil en 2 minutos\n"
-            "y empieza a generar *facturas reales* con tus datos. 👇",
+            "¿Ves cómo funciona FacturaVoz ? 😊\n\n" \
+            "Para generar *facturas reales* con tus datos,"
+            "empieza configurando tu perfil.\n"
+            "Son 2 minutos — solo una vez.\n"
+            "\n👇 *¡Pulsa el botón para empezar!* 👇",
+            
             parse_mode="Markdown",
             reply_markup=teclado_post_prueba
         )
@@ -1546,8 +1550,9 @@ async def generar_y_enviar_pdf_texto(update, context):
             filename=f"{prefijo}_{numero}.pdf",
             caption=(
                 f"{emoji} {prefijo.capitalize()} *{numero}* generada.\n"
-                "Pulsa el archivo de arriba para abrirlo.\n"
-                "Cuando quieras crear la siguiente, manda un audio."
+                "⬆️ Pulsa el archivo de arriba para abrirlo.⬆️\n\n"
+                "Cuando quieras crear el siguiente documento, "
+                "manda un audio directamente o pulsa los botones que aparecen abajo."
             ),
             parse_mode="Markdown"
         )
@@ -2070,8 +2075,8 @@ async def handle_onboarding_registro(update: Update, context: ContextTypes.DEFAU
     query = update.callback_query
     await query.answer()
     await query.edit_message_text(
-        "Vamos a configurar tu perfil. Serán 2 minutos.\n\n"
-        "A cada pregunta puedes responder escribiendo o mandando un audio — como quieras.\n\n"
+        "A cada pregunta puedes responder escribiendo o mandando un audio, \n"
+        "como tú prefieras. \n\n"
         "Si no tienes todos los datos a mano, no pasa nada — puedes completarlos después desde tu perfil.\n"
         "Y si te equivocas en algo, también puedes corregirlo.\n\n"
         "¿Cuál es tu nombre completo?"
