@@ -1384,29 +1384,9 @@ async def handle_voice_campo(update: Update, context: ContextTypes.DEFAULT_TYPE)
     return ESPERANDO_CONFIRMACION
 
 
-def _validar_datos_para_pdf(datos: dict | None) -> bool:
-    """
-    Devuelve True solo si los datos son suficientes para generar un PDF válido.
-    False si datos es None, si el subtotal es 0 y no hay precio_final,
-    o si falta el tipo.
-    """
-    if not datos:
-        return False
-    subtotal = calcular_subtotal(datos)
-    precio_final = datos.get("precio_final")
-    tiene_importe = subtotal > 0 or (precio_final is not None and to_float(precio_final) > 0)
-    return tiene_importe
-
-
 async def generar_y_enviar_pdf(query, context):
     """Genera el PDF y lo envía — llamado desde callback query"""
     datos = context.user_data.get("datos_factura")
-    if not _validar_datos_para_pdf(datos):
-        await query.message.reply_text(
-            "No encontré los datos de tu factura.\n\n"
-            "Manda un audio cuando quieras crear una nueva."
-        )
-        return ESPERANDO_AUDIO
     tipo = datos.get("tipo", "factura")
     es_presupuesto = tipo == "presupuesto"
     chat_id = query.message.chat_id
@@ -1495,12 +1475,6 @@ async def generar_y_enviar_pdf(query, context):
 async def generar_y_enviar_pdf_texto(update, context):
     """Genera el PDF y lo envía — llamado desde mensaje de texto"""
     datos = context.user_data.get("datos_factura")
-    if not _validar_datos_para_pdf(datos):
-        await update.message.reply_text(
-            "No encontré los datos de tu factura.\n\n"
-            "Manda un audio cuando quieras crear una nueva."
-        )
-        return ESPERANDO_AUDIO
     tipo = datos.get("tipo", "factura")
     es_presupuesto = tipo == "presupuesto"
     chat_id = update.effective_chat.id
