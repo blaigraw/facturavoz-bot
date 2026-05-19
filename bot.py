@@ -2002,7 +2002,7 @@ async def handle_consent(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 "Ya has visto cómo funciona FacturaVoz 😊\n\n"
                 "Para seguir necesitas configurar tu perfil.\n"
                 "Son 2 minutos — solo una vez."
-                "\n👇 *¡Pulsa el botón para empezar!* 👇",
+                "\n\n👇 *¡Pulsa el botón para empezar!* 👇",
                 reply_markup=teclado
             )
             return ONBOARDING_REGISTRO
@@ -2013,7 +2013,7 @@ async def handle_consent(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await query.edit_message_text(
                 "👋 Bienvenido a *FacturaVoz*\n\n"
                 "Graba un audio describiendo el trabajo y te genero la factura al momento."
-                "\n👇 *¡Pulsa el botón para empezar!* 👇",
+                "\n\n👇 *¡Pulsa el botón para empezar!* 👇",
                 parse_mode="Markdown",
                 reply_markup=teclado
             )
@@ -2039,7 +2039,7 @@ async def handle_onboarding_prueba(update: Update, context: ContextTypes.DEFAULT
             "Ya has visto cómo funciona FacturaVoz 😊\n\n"
             "Para seguir necesitas configurar tu perfil.\n"
             "Son 2 minutos — solo una vez."
-            "\n👇 *¡Pulsa el botón para empezar!* 👇",
+            "\n\n👇 *¡Pulsa el botón para empezar!* 👇",
             reply_markup=teclado
         )
         return ONBOARDING_REGISTRO
