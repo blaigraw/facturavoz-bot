@@ -1031,6 +1031,13 @@ async def handle_confirmacion(update: Update, context: ContextTypes.DEFAULT_TYPE
             )
         return ESPERANDO_CONFIRMACION
 
+    elif query.data == "start_confirmar_descarte":
+        context.user_data.clear()
+        await query.edit_message_text("De acuerdo. Manda un audio cuando quieras crear un documento.")
+        return ESPERANDO_AUDIO
+    elif query.data == "start_cancelar_descarte":
+        await query.message.reply_text("De acuerdo. Sigue con tu documento.")
+        return ESPERANDO_CONFIRMACION
     elif query.data == "audio_cancelar":
         await query.edit_message_text(
             "↩️ Volvemos a lo que tenías."
@@ -1482,6 +1489,7 @@ async def generar_y_enviar_pdf(query, context):
             reply_markup=teclado_post_prueba
         )
         return ONBOARDING_REGISTRO
+    context.user_data.clear()
     teclado_nuevo = InlineKeyboardMarkup([
         [
             InlineKeyboardButton("➕ Nueva factura", callback_data="nueva_factura"),
@@ -1539,6 +1547,7 @@ async def generar_y_enviar_pdf_texto(update, context):
                     f"Manda un audio cuando quieras crear la siguiente.",
             parse_mode="Markdown"
         )
+    context.user_data.clear()
     teclado_nuevo = InlineKeyboardMarkup([
         [
             InlineKeyboardButton("➕ Nueva factura", callback_data="nueva_factura"),
@@ -1559,8 +1568,29 @@ async def handle_iban(update: Update, context: ContextTypes.DEFAULT_TYPE):
     return ESPERANDO_CONFIRMACION
 
 
+async def start_mid_flow(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """/start recibido mientras hay un documento en curso — pide confirmación"""
+    if not context.user_data.get("datos_factura"):
+        return await start(update, context)
+    teclado = InlineKeyboardMarkup([
+        [
+            InlineKeyboardButton("⚠️ Sí, descartar", callback_data="start_confirmar_descarte"),
+            InlineKeyboardButton("↩️ Volver al documento", callback_data="start_cancelar_descarte")
+        ]
+    ])
+    await update.message.reply_text(
+        "Tienes un documento en curso.\n\n"
+        "Si arrancas de nuevo lo perderás.\n"
+        "¿Seguro que quieres salir?",
+        reply_markup=teclado
+    )
+    return ESPERANDO_CONFIRMACION
+
+
 async def handle_voice_inesperado(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Gestiona un audio mandado mientras hay un resumen activo"""
+    if not context.user_data.get("datos_factura"):
+        return await handle_voice(update, context)
     file = await context.bot.get_file(update.message.voice.file_id)
     audio_path = "audio_pendiente.ogg"
     await file.download_to_drive(audio_path)
@@ -2162,6 +2192,7 @@ conv_handler = ConversationHandler(
         ],
         ESPERANDO_CONFIRMACION: [
             MessageHandler(filters.VOICE, handle_voice_inesperado),
+            CommandHandler("start", start_mid_flow),
             CallbackQueryHandler(handle_perfil_callbacks, pattern="^(perfil_|setiva_)"),
             CallbackQueryHandler(handle_confirmacion),
             CallbackQueryHandler(handle_onboarding_prueba, pattern="^onboarding_prueba$"),
