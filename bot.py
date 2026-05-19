@@ -1485,7 +1485,7 @@ async def generar_y_enviar_pdf(query, context):
         ])
         await query.message.reply_text(
             "¿Ves cómo funciona FacturaVoz ? 😊\n\n" \
-            "Para generar *facturas reales* con tus datos,"
+            "Para generar *facturas reales* con tus datos, "
             "empieza configurando tu perfil.\n"
             "Son 2 minutos — solo una vez.\n"
             "\n👇 *¡Pulsa el botón para empezar!* 👇",
