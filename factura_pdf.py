@@ -83,6 +83,7 @@ def generar_factura_pdf(datos, numero_factura=None, info_autonomo=None, tipo="fa
     )
 
     nombre_emisor = info_autonomo.get("nombre") or ""
+    nombre_emisor_spacer = 0.05*cm if len(nombre_emisor) > 35 else 0.3*cm
     if len(nombre_emisor) > 50:
         estilo_titulo.fontSize = 12
     elif len(nombre_emisor) > 35:
@@ -141,7 +142,7 @@ def generar_factura_pdf(datos, numero_factura=None, info_autonomo=None, tipo="fa
     # Columna izquierda — datos del autónomo con espaciado entre campos
     col_izquierda = [
         Paragraph(info_autonomo.get("nombre") or "—", estilo_titulo),
-        Spacer(1, 0.3*cm),
+        Spacer(1, nombre_emisor_spacer),
         Paragraph(f"NIF: {info_autonomo.get('nif') or '—'}", estilo_subtitulo),
         Spacer(1, 0.15*cm),
         Paragraph(info_autonomo.get("direccion") or "—", estilo_subtitulo),
