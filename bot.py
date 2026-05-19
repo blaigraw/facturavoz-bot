@@ -1031,6 +1031,13 @@ async def handle_confirmacion(update: Update, context: ContextTypes.DEFAULT_TYPE
             )
         return ESPERANDO_CONFIRMACION
 
+    elif query.data == "start_confirmar_descarte":
+        context.user_data.clear()
+        await query.edit_message_text("De acuerdo. Manda un audio cuando quieras crear un documento.")
+        return ESPERANDO_AUDIO
+    elif query.data == "start_cancelar_descarte":
+        await query.message.reply_text("De acuerdo. Sigue con tu documento.")
+        return ESPERANDO_CONFIRMACION
     elif query.data == "audio_cancelar":
         await query.edit_message_text(
             "↩️ Volvemos a lo que tenías."
@@ -1384,9 +1391,29 @@ async def handle_voice_campo(update: Update, context: ContextTypes.DEFAULT_TYPE)
     return ESPERANDO_CONFIRMACION
 
 
+def _validar_datos_para_pdf(datos: dict | None) -> bool:
+    """
+    Devuelve True solo si los datos son suficientes para generar un PDF válido.
+    False si datos es None, si el subtotal es 0 y no hay precio_final,
+    o si falta el tipo.
+    """
+    if not datos:
+        return False
+    subtotal = calcular_subtotal(datos)
+    precio_final = datos.get("precio_final")
+    tiene_importe = subtotal > 0 or (precio_final is not None and to_float(precio_final) > 0)
+    return tiene_importe
+
+
 async def generar_y_enviar_pdf(query, context):
     """Genera el PDF y lo envía — llamado desde callback query"""
     datos = context.user_data.get("datos_factura")
+    if not _validar_datos_para_pdf(datos):
+        await query.message.reply_text(
+            "No encontré los datos de tu factura.\n\n"
+            "Manda un audio cuando quieras crear una nueva."
+        )
+        return ESPERANDO_AUDIO
     tipo = datos.get("tipo", "factura")
     es_presupuesto = tipo == "presupuesto"
     chat_id = query.message.chat_id
@@ -1462,6 +1489,7 @@ async def generar_y_enviar_pdf(query, context):
             reply_markup=teclado_post_prueba
         )
         return ONBOARDING_REGISTRO
+    context.user_data.clear()
     teclado_nuevo = InlineKeyboardMarkup([
         [
             InlineKeyboardButton("➕ Nueva factura", callback_data="nueva_factura"),
@@ -1475,6 +1503,12 @@ async def generar_y_enviar_pdf(query, context):
 async def generar_y_enviar_pdf_texto(update, context):
     """Genera el PDF y lo envía — llamado desde mensaje de texto"""
     datos = context.user_data.get("datos_factura")
+    if not _validar_datos_para_pdf(datos):
+        await update.message.reply_text(
+            "No encontré los datos de tu factura.\n\n"
+            "Manda un audio cuando quieras crear una nueva."
+        )
+        return ESPERANDO_AUDIO
     tipo = datos.get("tipo", "factura")
     es_presupuesto = tipo == "presupuesto"
     chat_id = update.effective_chat.id
@@ -1513,6 +1547,7 @@ async def generar_y_enviar_pdf_texto(update, context):
                     f"Manda un audio cuando quieras crear la siguiente.",
             parse_mode="Markdown"
         )
+    context.user_data.clear()
     teclado_nuevo = InlineKeyboardMarkup([
         [
             InlineKeyboardButton("➕ Nueva factura", callback_data="nueva_factura"),
@@ -1533,8 +1568,29 @@ async def handle_iban(update: Update, context: ContextTypes.DEFAULT_TYPE):
     return ESPERANDO_CONFIRMACION
 
 
+async def start_mid_flow(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """/start recibido mientras hay un documento en curso — pide confirmación"""
+    if not context.user_data.get("datos_factura"):
+        return await start(update, context)
+    teclado = InlineKeyboardMarkup([
+        [
+            InlineKeyboardButton("⚠️ Sí, descartar", callback_data="start_confirmar_descarte"),
+            InlineKeyboardButton("↩️ Volver al documento", callback_data="start_cancelar_descarte")
+        ]
+    ])
+    await update.message.reply_text(
+        "Tienes un documento en curso.\n\n"
+        "Si arrancas de nuevo lo perderás.\n"
+        "¿Seguro que quieres salir?",
+        reply_markup=teclado
+    )
+    return ESPERANDO_CONFIRMACION
+
+
 async def handle_voice_inesperado(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Gestiona un audio mandado mientras hay un resumen activo"""
+    if not context.user_data.get("datos_factura"):
+        return await handle_voice(update, context)
     file = await context.bot.get_file(update.message.voice.file_id)
     audio_path = "audio_pendiente.ogg"
     await file.download_to_drive(audio_path)
@@ -2136,6 +2192,7 @@ conv_handler = ConversationHandler(
         ],
         ESPERANDO_CONFIRMACION: [
             MessageHandler(filters.VOICE, handle_voice_inesperado),
+            CommandHandler("start", start_mid_flow),
             CallbackQueryHandler(handle_perfil_callbacks, pattern="^(perfil_|setiva_)"),
             CallbackQueryHandler(handle_confirmacion),
             CallbackQueryHandler(handle_onboarding_prueba, pattern="^onboarding_prueba$"),
