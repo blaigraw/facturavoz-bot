@@ -2001,8 +2001,8 @@ async def handle_consent(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await query.edit_message_text(
                 "Ya has visto cómo funciona FacturaVoz 😊\n\n"
                 "Para seguir necesitas configurar tu perfil.\n"
-                "Son 2 minutos — solo una vez."
-                "\n\n👇 *¡Pulsa el botón para empezar!* 👇",
+                "Son 2 minutos — solo una vez.\n"
+                "\n👇 *¡Pulsa el botón para empezar!* 👇",
                 reply_markup=teclado
             )
             return ONBOARDING_REGISTRO
@@ -2012,8 +2012,8 @@ async def handle_consent(update: Update, context: ContextTypes.DEFAULT_TYPE):
             ]])
             await query.edit_message_text(
                 "👋 Bienvenido a *FacturaVoz*\n\n"
-                "Graba un audio describiendo el trabajo y te genero la factura al momento."
-                "\n\n👇 *¡Pulsa el botón para empezar!* 👇",
+                "Graba un audio describiendo el trabajo y te genero la factura al momento.\n"
+                "\n👇 *¡Pulsa el botón para empezar!* 👇",
                 parse_mode="Markdown",
                 reply_markup=teclado
             )
@@ -2038,8 +2038,8 @@ async def handle_onboarding_prueba(update: Update, context: ContextTypes.DEFAULT
         await query.edit_message_text(
             "Ya has visto cómo funciona FacturaVoz 😊\n\n"
             "Para seguir necesitas configurar tu perfil.\n"
-            "Son 2 minutos — solo una vez."
-            "\n\n👇 *¡Pulsa el botón para empezar!* 👇",
+            "Son 2 minutos — solo una vez.\n"
+            "\n👇 *¡Pulsa el botón para empezar!* 👇",
             reply_markup=teclado
         )
         return ONBOARDING_REGISTRO
@@ -2059,7 +2059,8 @@ async def handle_onboarding_prueba(update: Update, context: ContextTypes.DEFAULT
         "• Desplazamiento\n\n"
         "Si algo no sale bien no pasa nada — "
         "podrás editar cualquier campo antes de confirmar. 👇\n\n"
-        "¿Te atascas o algo no funciona? Escribe /ayuda",
+        "¿Te atascas o algo no funciona? \n"
+        "Escribe /ayuda ❓",    
         parse_mode="Markdown"
     )
     return ESPERANDO_AUDIO
