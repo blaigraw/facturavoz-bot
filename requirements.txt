@@ -5,3 +5,5 @@ python-dotenv
 psycopg2-binary
 requests
 aiohttp>=3.9.0
+tabulate
+tabulate
